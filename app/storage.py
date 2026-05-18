@@ -5,7 +5,7 @@ from app.database import get_connection
 
 def save_profile(user_id: int, profile: dict[str, Any]) -> None:
     """
-    Сохраняет анкету пользователя в SQLite.
+    Сохраняет анкету пользователя в PostgreSQL.
 
     Если анкета уже есть, она обновляется.
     Если анкеты нет, она создаётся.
@@ -25,17 +25,17 @@ def save_profile(user_id: int, profile: dict[str, Any]) -> None:
                 interests,
                 photo_file_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(telegram_id) DO UPDATE SET
-                username = excluded.username,
-                name = excluded.name,
-                faculty = excluded.faculty,
-                course = excluded.course,
-                goal = excluded.goal,
-                about = excluded.about,
-                interests = excluded.interests,
-                photo_file_id = excluded.photo_file_id,
-                updated_at = CURRENT_TIMESTAMP
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (telegram_id) DO UPDATE SET
+                username = EXCLUDED.username,
+                name = EXCLUDED.name,
+                faculty = EXCLUDED.faculty,
+                course = EXCLUDED.course,
+                goal = EXCLUDED.goal,
+                about = EXCLUDED.about,
+                interests = EXCLUDED.interests,
+                photo_file_id = EXCLUDED.photo_file_id,
+                updated_at = NOW()
             """,
             (
                 user_id,
@@ -55,7 +55,7 @@ def save_profile(user_id: int, profile: dict[str, Any]) -> None:
 
 def get_profile(user_id: int) -> dict[str, Any] | None:
     """
-    Возвращает анкету пользователя из SQLite.
+    Возвращает анкету пользователя из PostgreSQL.
     Если анкеты нет, возвращает None.
     """
 
@@ -75,7 +75,7 @@ def get_profile(user_id: int) -> dict[str, Any] | None:
                 created_at,
                 updated_at
             FROM profiles
-            WHERE telegram_id = ?
+            WHERE telegram_id = %s
             """,
             (user_id,),
         ).fetchone()
@@ -88,7 +88,7 @@ def get_profile(user_id: int) -> dict[str, Any] | None:
 
 def delete_profile(user_id: int) -> None:
     """
-    Удаляет анкету пользователя из SQLite.
+    Удаляет анкету пользователя из PostgreSQL.
 
     Дополнительно удаляем связанные лайки, мэтчи и блокировки.
     """
@@ -97,7 +97,7 @@ def delete_profile(user_id: int) -> None:
         connection.execute(
             """
             DELETE FROM likes
-            WHERE from_user_id = ? OR to_user_id = ?
+            WHERE from_user_id = %s OR to_user_id = %s
             """,
             (user_id, user_id),
         )
@@ -105,7 +105,7 @@ def delete_profile(user_id: int) -> None:
         connection.execute(
             """
             DELETE FROM matches
-            WHERE user1_id = ? OR user2_id = ?
+            WHERE user1_id = %s OR user2_id = %s
             """,
             (user_id, user_id),
         )
@@ -113,7 +113,7 @@ def delete_profile(user_id: int) -> None:
         connection.execute(
             """
             DELETE FROM blocks
-            WHERE blocker_id = ? OR blocked_id = ?
+            WHERE blocker_id = %s OR blocked_id = %s
             """,
             (user_id, user_id),
         )
@@ -121,7 +121,7 @@ def delete_profile(user_id: int) -> None:
         connection.execute(
             """
             DELETE FROM profiles
-            WHERE telegram_id = ?
+            WHERE telegram_id = %s
             """,
             (user_id,),
         )
@@ -169,26 +169,26 @@ def get_profiles_for_viewer(
             profiles.created_at,
             profiles.updated_at
         FROM profiles
-        WHERE profiles.telegram_id != ?
+        WHERE profiles.telegram_id != %s
         AND profiles.telegram_id NOT IN (
             SELECT likes.to_user_id
             FROM likes
-            WHERE likes.from_user_id = ?
+            WHERE likes.from_user_id = %s
         )
         AND profiles.telegram_id NOT IN (
             SELECT blocks.blocked_id
             FROM blocks
-            WHERE blocks.blocker_id = ?
+            WHERE blocks.blocker_id = %s
         )
         AND profiles.telegram_id NOT IN (
             SELECT blocks.blocker_id
             FROM blocks
-            WHERE blocks.blocked_id = ?
+            WHERE blocks.blocked_id = %s
         )
     """
 
     if goal_filter:
-        query += " AND profiles.goal = ?"
+        query += " AND profiles.goal = %s"
         params.append(goal_filter)
 
     query += " ORDER BY profiles.updated_at DESC"
@@ -220,10 +220,10 @@ def save_like_action(
                 to_user_id,
                 action
             )
-            VALUES (?, ?, ?)
-            ON CONFLICT(from_user_id, to_user_id) DO UPDATE SET
-                action = excluded.action,
-                created_at = CURRENT_TIMESTAMP
+            VALUES (%s, %s, %s)
+            ON CONFLICT (from_user_id, to_user_id) DO UPDATE SET
+                action = EXCLUDED.action,
+                created_at = NOW()
             """,
             (from_user_id, to_user_id, action),
         )
@@ -244,8 +244,8 @@ def get_like_action(
             """
             SELECT action
             FROM likes
-            WHERE from_user_id = ?
-            AND to_user_id = ?
+            WHERE from_user_id = %s
+            AND to_user_id = %s
             """,
             (from_user_id, to_user_id),
         ).fetchone()
@@ -301,23 +301,22 @@ def create_match(
     )
 
     with get_connection() as connection:
-        try:
-            connection.execute(
-                """
-                INSERT INTO matches (
-                    user1_id,
-                    user2_id
-                )
-                VALUES (?, ?)
-                """,
-                (normalized_user1_id, normalized_user2_id),
+        row = connection.execute(
+            """
+            INSERT INTO matches (
+                user1_id,
+                user2_id
             )
+            VALUES (%s, %s)
+            ON CONFLICT (user1_id, user2_id) DO NOTHING
+            RETURNING id
+            """,
+            (normalized_user1_id, normalized_user2_id),
+        ).fetchone()
 
-            connection.commit()
-            return True
+        connection.commit()
 
-        except Exception:
-            return False
+    return row is not None
 
 
 def get_user_matches(user_id: int) -> list[dict[str, Any]]:
@@ -346,19 +345,19 @@ def get_user_matches(user_id: int) -> list[dict[str, Any]]:
             FROM matches
             JOIN profiles
                 ON profiles.telegram_id = CASE
-                    WHEN matches.user1_id = ? THEN matches.user2_id
+                    WHEN matches.user1_id = %s THEN matches.user2_id
                     ELSE matches.user1_id
                 END
-            WHERE (matches.user1_id = ? OR matches.user2_id = ?)
+            WHERE (matches.user1_id = %s OR matches.user2_id = %s)
             AND profiles.telegram_id NOT IN (
                 SELECT blocks.blocked_id
                 FROM blocks
-                WHERE blocks.blocker_id = ?
+                WHERE blocks.blocker_id = %s
             )
             AND profiles.telegram_id NOT IN (
                 SELECT blocks.blocker_id
                 FROM blocks
-                WHERE blocks.blocked_id = ?
+                WHERE blocks.blocked_id = %s
             )
             ORDER BY matches.created_at DESC
             """,
@@ -389,11 +388,12 @@ def block_user(
     with get_connection() as connection:
         connection.execute(
             """
-            INSERT OR IGNORE INTO blocks (
+            INSERT INTO blocks (
                 blocker_id,
                 blocked_id
             )
-            VALUES (?, ?)
+            VALUES (%s, %s)
+            ON CONFLICT (blocker_id, blocked_id) DO NOTHING
             """,
             (blocker_id, blocked_id),
         )
@@ -402,9 +402,9 @@ def block_user(
             """
             DELETE FROM likes
             WHERE
-                (from_user_id = ? AND to_user_id = ?)
+                (from_user_id = %s AND to_user_id = %s)
                 OR
-                (from_user_id = ? AND to_user_id = ?)
+                (from_user_id = %s AND to_user_id = %s)
             """,
             (blocker_id, blocked_id, blocked_id, blocker_id),
         )
@@ -412,8 +412,8 @@ def block_user(
         connection.execute(
             """
             DELETE FROM matches
-            WHERE user1_id = ?
-            AND user2_id = ?
+            WHERE user1_id = %s
+            AND user2_id = %s
             """,
             (normalized_user1_id, normalized_user2_id),
         )
@@ -441,7 +441,7 @@ def report_user(
                 reported_id,
                 reason
             )
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             """,
             (reporter_id, reported_id, reason),
         )
@@ -474,7 +474,7 @@ def get_blocked_profiles(user_id: int) -> list[dict[str, Any]]:
             FROM blocks
             JOIN profiles
                 ON profiles.telegram_id = blocks.blocked_id
-            WHERE blocks.blocker_id = ?
+            WHERE blocks.blocker_id = %s
             ORDER BY blocks.created_at DESC
             """,
             (user_id,),
@@ -495,7 +495,7 @@ def unblock_all_users(user_id: int) -> None:
         connection.execute(
             """
             DELETE FROM blocks
-            WHERE blocker_id = ?
+            WHERE blocker_id = %s
             """,
             (user_id,),
         )
