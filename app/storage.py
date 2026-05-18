@@ -256,6 +256,122 @@ def get_like_action(
     return str(row["action"])
 
 
+def undo_last_skip_action(from_user_id: int) -> dict[str, Any] | None:
+    """
+    Отменяет последний пропуск анкеты текущим пользователем.
+
+    Логика:
+    - ищем последнее действие skip от текущего пользователя;
+    - удаляем это действие из таблицы likes;
+    - возвращаем анкету, которую пользователь случайно пропустил.
+
+    Если пропущенных анкет нет, возвращает None.
+    """
+
+    with get_connection() as connection:
+        skipped_row = connection.execute(
+            """
+            SELECT
+                likes.to_user_id
+            FROM likes
+            WHERE likes.from_user_id = %s
+            AND likes.action = 'skip'
+            ORDER BY likes.created_at DESC
+            LIMIT 1
+            """,
+            (from_user_id,),
+        ).fetchone()
+
+        if skipped_row is None:
+            return None
+
+        skipped_user_id = skipped_row["to_user_id"]
+
+        connection.execute(
+            """
+            DELETE FROM likes
+            WHERE from_user_id = %s
+            AND to_user_id = %s
+            AND action = 'skip'
+            """,
+            (from_user_id, skipped_user_id),
+        )
+
+        profile_row = connection.execute(
+            """
+            SELECT
+                telegram_id,
+                username,
+                name,
+                faculty,
+                course,
+                goal,
+                about,
+                interests,
+                photo_file_id,
+                created_at,
+                updated_at
+            FROM profiles
+            WHERE telegram_id = %s
+            """,
+            (skipped_user_id,),
+        ).fetchone()
+
+        connection.commit()
+
+    if profile_row is None:
+        return None
+
+    return dict(profile_row)
+
+
+def remove_like_action(
+    from_user_id: int,
+    to_user_id: int,
+) -> bool:
+    """
+    Убирает лайк текущего пользователя с другой анкеты.
+
+    Логика:
+    - удаляем запись из likes, где текущий пользователь поставил like;
+    - если между пользователями был мэтч, удаляем его;
+    - лайк второго пользователя не трогаем.
+
+    Возвращает True, если лайк реально был удалён.
+    Возвращает False, если лайка не было.
+    """
+
+    normalized_user1_id, normalized_user2_id = normalize_match_pair(
+        from_user_id,
+        to_user_id,
+    )
+
+    with get_connection() as connection:
+        deleted_like = connection.execute(
+            """
+            DELETE FROM likes
+            WHERE from_user_id = %s
+            AND to_user_id = %s
+            AND action = 'like'
+            RETURNING id
+            """,
+            (from_user_id, to_user_id),
+        ).fetchone()
+
+        connection.execute(
+            """
+            DELETE FROM matches
+            WHERE user1_id = %s
+            AND user2_id = %s
+            """,
+            (normalized_user1_id, normalized_user2_id),
+        )
+
+        connection.commit()
+
+    return deleted_like is not None
+
+
 def is_mutual_like(
     user1_id: int,
     user2_id: int,

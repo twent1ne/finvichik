@@ -20,6 +20,7 @@
 
 html {
     background: var(--green-pale);
+    overflow-x: hidden;
 }
 
 body {
@@ -29,12 +30,14 @@ body {
         radial-gradient(circle at top left, rgba(31, 122, 92, 0.10), transparent 34%),
         linear-gradient(180deg, #ffffff 0%, #f4fbf8 100%);
     color: var(--text);
+    overflow-x: hidden;
 }
 
 .app {
     max-width: 720px;
     margin: 0 auto;
     padding: 8px 16px 92px;
+    width: 100%;
 }
 
 .user-card-hidden {
@@ -79,6 +82,42 @@ h3 {
     padding: 18px;
     margin: 14px 0;
     box-shadow: var(--small-shadow);
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Главное исправление: длинный текст больше не вылезает из карточек */
+.card,
+.browse-card,
+.profile-block,
+.match-card,
+.match-card-content,
+.photo-controls,
+.section-heading,
+.status,
+.muted {
+    min-width: 0;
+}
+
+.card p,
+.browse-card p,
+.profile-block p,
+.match-card p,
+.match-contact,
+.status,
+.muted,
+.photo-description,
+.demo-card li,
+label,
+input,
+select,
+textarea {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
 }
 
 .muted {
@@ -92,6 +131,10 @@ h3 {
     gap: 16px;
     align-items: flex-start;
     margin-bottom: 6px;
+}
+
+.section-heading > * {
+    min-width: 0;
 }
 
 .soft-icon {
@@ -133,6 +176,9 @@ h3 {
     font-weight: 800;
     font-size: 13px;
     cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .tab-button span {
@@ -164,6 +210,8 @@ h3 {
     border: 1px solid var(--line);
     border-radius: 24px;
     background: #f8fcfa;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .profile-photo-preview {
@@ -192,6 +240,7 @@ h3 {
 
 .photo-controls {
     min-width: 0;
+    max-width: 100%;
 }
 
 .photo-title {
@@ -217,6 +266,10 @@ h3 {
     font-weight: 800;
     cursor: pointer;
     box-shadow: 0 10px 18px rgba(31, 122, 92, 0.18);
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .photo-upload-button input {
@@ -228,6 +281,8 @@ h3 {
     color: var(--muted);
     font-size: 13px;
     font-weight: 700;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .form {
@@ -249,6 +304,7 @@ label {
     gap: 7px;
     font-weight: 750;
     color: #30423b;
+    min-width: 0;
 }
 
 label span {
@@ -294,6 +350,9 @@ textarea {
     font-size: 16px;
     cursor: pointer;
     box-shadow: 0 14px 22px rgba(31, 122, 92, 0.22);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .primary-button:active,
@@ -356,6 +415,10 @@ textarea {
     cursor: pointer;
     transition: 0.18s ease;
     box-shadow: 0 6px 14px rgba(31, 122, 92, 0.05);
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .goal-filter-chip:hover {
@@ -379,6 +442,12 @@ textarea {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.profile-card-top > * {
+    min-width: 0;
 }
 
 .profile-counter {
@@ -388,6 +457,7 @@ textarea {
     color: var(--green);
     font-weight: 800;
     font-size: 12px;
+    flex-shrink: 0;
 }
 
 .student-avatar {
@@ -420,12 +490,18 @@ textarea {
     border-radius: 20px;
     background: #f8fcfa;
     border: 1px solid var(--line);
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .profile-block p {
     margin: 0;
     line-height: 1.55;
     color: #30423b;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
 }
 
 .action-grid {
@@ -442,6 +518,16 @@ textarea {
     font-weight: 850;
     font-size: 15px;
     cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-width: 0;
+}
+
+.action-button.back {
+    grid-column: 1 / -1;
+    background: #fefce8;
+    color: #854d0e;
 }
 
 .action-button.like {
@@ -478,6 +564,8 @@ textarea {
     border-radius: 22px;
     background: #f8fcfa;
     border: 1px solid var(--line);
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .match-avatar {
@@ -503,17 +591,24 @@ textarea {
 .match-card-content {
     min-width: 0;
     flex: 1;
+    max-width: 100%;
 }
 
 .match-card h3 {
     margin: 0 0 8px;
     font-size: 18px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .match-card p {
     margin: 6px 0;
     line-height: 1.5;
     color: #334155;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
 }
 
 .match-contact {
@@ -524,6 +619,7 @@ textarea {
     color: var(--green);
     font-weight: 850;
     word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .stats-grid {
@@ -539,6 +635,8 @@ textarea {
     background: #f8fcfa;
     border: 1px solid var(--line);
     text-align: center;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .stat-card span {
@@ -547,12 +645,16 @@ textarea {
     font-weight: 900;
     color: var(--green);
     letter-spacing: -0.04em;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .stat-card p {
     margin: 6px 0 0;
     color: var(--muted);
     font-weight: 750;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .demo-card {
@@ -561,6 +663,8 @@ textarea {
     border-radius: 22px;
     background: linear-gradient(180deg, #f2fbf7, #ffffff);
     border: 1px solid var(--line);
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .demo-card ul {
@@ -604,4 +708,24 @@ textarea {
         font-size: 13px;
         padding: 10px 14px;
     }
+}
+
+
+.match-unlike-button {
+    width: 100%;
+    margin-top: 12px;
+    border: none;
+    border-radius: 16px;
+    padding: 11px 13px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-weight: 850;
+    cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.match-unlike-button:active {
+    transform: scale(0.99);
 }

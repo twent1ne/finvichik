@@ -45,6 +45,7 @@ const browseMeta = document.getElementById("browseMeta");
 const browseAbout = document.getElementById("browseAbout");
 const browseInterests = document.getElementById("browseInterests");
 
+const backButton = document.getElementById("backButton");
 const likeButton = document.getElementById("likeButton");
 const skipButton = document.getElementById("skipButton");
 const reportButton = document.getElementById("reportButton");
@@ -517,6 +518,53 @@ async function loadNextBrowseProfile() {
 }
 
 
+async function undoLastSkip() {
+    setBrowseStatus("Возвращаем предыдущую анкету...");
+
+    try {
+        const response = await fetch("/api/profiles/undo-skip", {
+            method: "POST",
+            headers: getAuthHeaders()
+        });
+
+        if (response.status === 400) {
+            setBrowseStatus("Сначала создай свою анкету во вкладке «Анкета».", "error");
+            return;
+        }
+
+        if (response.status === 401) {
+            setBrowseStatus(authErrorText, "error");
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error("Не удалось вернуться к предыдущей анкете");
+        }
+
+        const data = await response.json();
+
+        if (!data.ok || !data.profile) {
+            setBrowseStatus(data.message || "Нет предыдущей пропущенной анкеты.");
+            return;
+        }
+
+        renderBrowseProfile(data.profile);
+        setBrowseStatus("↩️ Вернулись к предыдущей анкете.", "success");
+
+        if (tg) {
+            tg.HapticFeedback?.notificationOccurred("success");
+        }
+    } catch (error) {
+        setBrowseStatus("Ошибка возврата к предыдущей анкете.", "error");
+        console.error(error);
+
+        if (tg) {
+            tg.HapticFeedback?.notificationOccurred("error");
+        }
+    }
+}
+
+
 async function sendBrowseAction(action) {
     if (!currentBrowseProfile) {
         setBrowseStatus("Сначала загрузи анкету.", "error");
@@ -586,6 +634,57 @@ async function sendBrowseAction(action) {
 }
 
 
+async function unlikeProfile(targetUserId) {
+    setMatchesStatus("Убираем лайк...");
+
+    try {
+        const response = await fetch("/api/profiles/unlike", {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                target_user_id: targetUserId
+            })
+        });
+
+        if (response.status === 400) {
+            setMatchesStatus("Сначала создай свою анкету.", "error");
+            return;
+        }
+
+        if (response.status === 401) {
+            setMatchesStatus(authErrorText, "error");
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error("Не удалось убрать лайк");
+        }
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            setMatchesStatus(data.message || "Лайк уже был убран.");
+            return;
+        }
+
+        setMatchesStatus("💔 Лайк убран. Мэтч удалён.", "success");
+
+        await loadMatches();
+
+        if (tg) {
+            tg.HapticFeedback?.notificationOccurred("success");
+        }
+    } catch (error) {
+        setMatchesStatus("Ошибка удаления лайка.", "error");
+        console.error(error);
+
+        if (tg) {
+            tg.HapticFeedback?.notificationOccurred("error");
+        }
+    }
+}
+
+
 function renderMatches(matches) {
     matchesList.innerHTML = "";
 
@@ -630,10 +729,19 @@ function renderMatches(matches) {
             <p><b>Цель:</b> ${escapeHtml(profile.goal)}</p>
             <p><b>Интересы:</b> ${escapeHtml(profile.interests)}</p>
             <div class="match-contact">Контакт: ${username}</div>
+            <button type="button" class="match-unlike-button" data-user-id="${profile.telegram_id}">
+                💔 Убрать лайк
+            </button>
         `;
 
         card.appendChild(avatar);
         card.appendChild(content);
+
+        const unlikeButton = card.querySelector(".match-unlike-button");
+
+        unlikeButton.addEventListener("click", () => {
+            unlikeProfile(profile.telegram_id);
+        });
 
         matchesList.appendChild(card);
     });
@@ -726,6 +834,7 @@ profilePhotoInput.addEventListener("change", uploadProfilePhoto);
 
 loadProfileButton.addEventListener("click", loadNextBrowseProfile);
 
+backButton.addEventListener("click", undoLastSkip);
 likeButton.addEventListener("click", () => sendBrowseAction("like"));
 skipButton.addEventListener("click", () => sendBrowseAction("skip"));
 reportButton.addEventListener("click", () => sendBrowseAction("report"));

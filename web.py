@@ -22,9 +22,11 @@ from app.storage import (
     get_project_stats,
     get_user_matches,
     is_mutual_like,
+    remove_like_action,
     report_user,
     save_like_action,
     save_profile,
+    undo_last_skip_action,
 )
 
 
@@ -78,6 +80,10 @@ class ProfileIn(BaseModel):
 class BrowseActionIn(BaseModel):
     target_user_id: int
     action: str
+
+
+class UnlikeProfileIn(BaseModel):
+    target_user_id: int
 
 
 def validate_telegram_init_data(init_data: str) -> dict[str, Any]:
@@ -628,6 +634,100 @@ async def api_browse_action(
         status_code=400,
         detail="Invalid action",
     )
+
+
+@app.post("/api/profiles/undo-skip")
+async def api_undo_last_skip(
+    x_telegram_init_data: str | None = Header(default=None),
+):
+    """
+    Возвращает последнюю случайно пропущенную анкету.
+
+    Работает только для действия skip:
+    - удаляет последний skip текущего пользователя;
+    - возвращает эту анкету обратно в просмотр.
+    """
+
+    telegram_user = get_current_telegram_user(x_telegram_init_data)
+    current_user_id = int(telegram_user["id"])
+
+    user_profile = get_profile(current_user_id)
+
+    if not user_profile:
+        raise HTTPException(
+            status_code=400,
+            detail="Create your profile first",
+        )
+
+    profile = undo_last_skip_action(current_user_id)
+
+    if not profile:
+        return {
+            "ok": False,
+            "message": "Нет предыдущей пропущенной анкеты",
+            "profile": None,
+        }
+
+    return {
+        "ok": True,
+        "message": "Предыдущая анкета возвращена",
+        "profile": profile_for_public_view(profile),
+    }
+
+
+@app.post("/api/profiles/unlike")
+async def api_unlike_profile(
+    unlike_data: UnlikeProfileIn,
+    x_telegram_init_data: str | None = Header(default=None),
+):
+    """
+    Убирает лайк текущего пользователя с другой анкеты.
+
+    Если из-за этого был мэтч, он удаляется.
+    Лайк второго пользователя не удаляем.
+    """
+
+    telegram_user = get_current_telegram_user(x_telegram_init_data)
+    current_user_id = int(telegram_user["id"])
+    target_user_id = int(unlike_data.target_user_id)
+
+    if current_user_id == target_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot unlike yourself",
+        )
+
+    user_profile = get_profile(current_user_id)
+
+    if not user_profile:
+        raise HTTPException(
+            status_code=400,
+            detail="Create your profile first",
+        )
+
+    target_profile = get_profile(target_user_id)
+
+    if not target_profile:
+        raise HTTPException(
+            status_code=404,
+            detail="Target profile not found",
+        )
+
+    removed = remove_like_action(
+        from_user_id=current_user_id,
+        to_user_id=target_user_id,
+    )
+
+    if not removed:
+        return {
+            "ok": False,
+            "message": "Лайк уже был убран или не найден",
+        }
+
+    return {
+        "ok": True,
+        "message": "Лайк убран",
+    }
 
 
 @app.get("/api/matches")
