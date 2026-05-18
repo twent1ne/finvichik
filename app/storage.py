@@ -1,6 +1,58 @@
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from app.database import get_connection
+
+
+def normalize_photo_file_id(photo_file_id: Any) -> str | None:
+    """
+    Нормализует photo_file_id перед сохранением в базу.
+
+    Возможные варианты:
+    - None или пустая строка -> None
+    - Telegram file_id -> сохраняем как есть
+    - local:profile_photos/123.jpg -> сохраняем как есть
+    - https://...:10000/... -> убираем порт, чтобы Telegram не ругался
+    """
+
+    if photo_file_id is None:
+        return None
+
+    value = str(photo_file_id).strip()
+
+    if not value:
+        return None
+
+    if value.startswith("local:"):
+        return value
+
+    if not value.startswith(("http://", "https://")):
+        return value
+
+    parsed = urlsplit(value)
+
+    if not parsed.scheme or not parsed.hostname:
+        return None
+
+    if parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+        return None
+
+    if parsed.username or parsed.password:
+        return None
+
+    # Порт специально не сохраняем.
+    # Для Render публичный URL должен быть без :10000.
+    normalized_url = urlunsplit(
+        (
+            parsed.scheme,
+            parsed.hostname,
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+    return normalized_url
 
 
 def save_profile(user_id: int, profile: dict[str, Any]) -> None:
@@ -10,6 +62,8 @@ def save_profile(user_id: int, profile: dict[str, Any]) -> None:
     Если анкета уже есть, она обновляется.
     Если анкеты нет, она создаётся.
     """
+
+    photo_file_id = normalize_photo_file_id(profile.get("photo_file_id"))
 
     with get_connection() as connection:
         connection.execute(
@@ -46,7 +100,7 @@ def save_profile(user_id: int, profile: dict[str, Any]) -> None:
                 profile["goal"],
                 profile["about"],
                 profile["interests"],
-                profile.get("photo_file_id"),
+                photo_file_id,
             ),
         )
 
@@ -114,6 +168,14 @@ def delete_profile(user_id: int) -> None:
             """
             DELETE FROM blocks
             WHERE blocker_id = %s OR blocked_id = %s
+            """,
+            (user_id, user_id),
+        )
+
+        connection.execute(
+            """
+            DELETE FROM reports
+            WHERE reporter_id = %s OR reported_id = %s
             """,
             (user_id, user_id),
         )
@@ -211,6 +273,9 @@ def save_like_action(
     - like
     - skip
     """
+
+    if action not in {"like", "skip"}:
+        raise ValueError("action должен быть 'like' или 'skip'.")
 
     with get_connection() as connection:
         connection.execute(

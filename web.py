@@ -57,6 +57,9 @@ app.mount(
 )
 
 
+# Оставляем /uploads для обратной совместимости:
+# старые ссылки могут ещё встречаться в кэше браузера или фронтенда.
+# Но новые photo_url ниже будут идти через /api/photo/{telegram_id}.
 app.mount(
     "/uploads",
     StaticFiles(directory=UPLOADS_DIR),
@@ -187,36 +190,73 @@ def get_current_telegram_user(
     )
 
 
-def get_local_photo_url(photo_file_id: str) -> str | None:
+def get_safe_local_photo_path(photo_file_id: str) -> Path | None:
     """
-    Возвращает ссылку на локально загруженное фото Mini App.
+    Возвращает безопасный путь к локальному фото.
 
-    В photo_file_id локальные фото храним как:
+    В базе локальные фото хранятся так:
     local:profile_photos/123456789.jpg
+
+    Если файла нет или путь подозрительный, возвращаем None.
     """
 
     if not photo_file_id.startswith("local:"):
         return None
 
-    relative_path = photo_file_id.replace("local:", "", 1)
+    relative_path = photo_file_id.replace("local:", "", 1).lstrip("/")
 
-    return f"/uploads/{relative_path}"
+    if not relative_path:
+        return None
+
+    file_path = UPLOADS_DIR / relative_path
+
+    try:
+        file_path.resolve().relative_to(UPLOADS_DIR.resolve())
+    except ValueError:
+        return None
+
+    if not file_path.exists() or not file_path.is_file():
+        return None
+
+    return file_path
+
+
+def is_telegram_file_id(photo_file_id: str) -> bool:
+    """
+    Проверяет, похоже ли значение на Telegram file_id.
+
+    local:... — это локальный файл.
+    http/https — это внешний URL.
+    Всё остальное считаем Telegram file_id.
+    """
+
+    if photo_file_id.startswith("local:"):
+        return False
+
+    if photo_file_id.startswith(("http://", "https://")):
+        return False
+
+    return True
 
 
 def get_photo_url(profile: dict[str, Any]) -> str | None:
     """
     Возвращает URL фотографии профиля для Mini App.
+
+    Важно:
+    больше не возвращаем прямой путь /uploads/profile_photos/...
+    Вместо этого всегда отдаём /api/photo/{telegram_id}.
+
+    Так backend сам решает:
+    - отдать локальный файл;
+    - сделать redirect на Telegram-файл;
+    - вернуть 404, если фото уже исчезло.
     """
 
     photo_file_id = profile.get("photo_file_id")
 
     if not photo_file_id:
         return None
-
-    local_url = get_local_photo_url(str(photo_file_id))
-
-    if local_url:
-        return local_url
 
     telegram_id = profile.get("telegram_id")
 
@@ -268,8 +308,15 @@ def get_telegram_file_url(file_id: str) -> str:
 
     get_file_url = f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}"
 
-    with urllib.request.urlopen(get_file_url, timeout=10) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(get_file_url, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        print(f"Не удалось получить Telegram file URL: {error}")
+        raise HTTPException(
+            status_code=404,
+            detail="Telegram file not found",
+        )
 
     if not data.get("ok"):
         raise HTTPException(
@@ -280,6 +327,27 @@ def get_telegram_file_url(file_id: str) -> str:
     file_path = data["result"]["file_path"]
 
     return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+
+
+def delete_old_local_profile_photos(telegram_id: int, keep_file_name: str) -> None:
+    """
+    Удаляет старые локальные фото пользователя с другими расширениями.
+
+    Например, если было 123.png, а пользователь загрузил 123.jpg,
+    старый файл удаляем, чтобы не копить мусор.
+    """
+
+    for extension in (".jpg", ".jpeg", ".png", ".webp"):
+        old_path = PROFILE_PHOTOS_DIR / f"{telegram_id}{extension}"
+
+        if old_path.name == keep_file_name:
+            continue
+
+        if old_path.exists() and old_path.is_file():
+            try:
+                old_path.unlink()
+            except OSError as error:
+                print(f"Не удалось удалить старое фото {old_path}: {error}")
 
 
 @app.on_event("startup")
@@ -435,7 +503,14 @@ async def api_upload_my_photo(
             detail="Photo is too large",
         )
 
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Photo is empty",
+        )
+
     file_path.write_bytes(content)
+    delete_old_local_profile_photos(telegram_id, keep_file_name=file_name)
 
     local_photo_id = f"local:profile_photos/{file_name}"
 
@@ -451,7 +526,7 @@ async def api_upload_my_photo(
     return {
         "ok": True,
         "message": "Photo uploaded",
-        "photo_url": f"/uploads/profile_photos/{file_name}?v={int(time.time())}",
+        "photo_url": f"/api/photo/{telegram_id}?v={int(time.time())}",
     }
 
 
@@ -480,25 +555,37 @@ async def api_get_profile_photo(telegram_id: int):
             detail="Photo not found",
         )
 
-    photo_file_id = str(photo_file_id)
+    photo_file_id = str(photo_file_id).strip()
 
-    local_url = get_local_photo_url(photo_file_id)
+    if not photo_file_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Photo not found",
+        )
 
-    if local_url:
-        relative_path = local_url.replace("/uploads/", "", 1)
-        file_path = UPLOADS_DIR / relative_path
+    local_photo_path = get_safe_local_photo_path(photo_file_id)
 
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Local photo not found",
-            )
+    if local_photo_path:
+        return FileResponse(local_photo_path)
 
-        return FileResponse(file_path)
+    if photo_file_id.startswith("local:"):
+        print(f"Локальное фото профиля отсутствует: {photo_file_id}")
+        raise HTTPException(
+            status_code=404,
+            detail="Local photo not found",
+        )
 
-    telegram_file_url = get_telegram_file_url(photo_file_id)
+    if photo_file_id.startswith(("http://", "https://")):
+        return RedirectResponse(photo_file_id)
 
-    return RedirectResponse(telegram_file_url)
+    if is_telegram_file_id(photo_file_id):
+        telegram_file_url = get_telegram_file_url(photo_file_id)
+        return RedirectResponse(telegram_file_url)
+
+    raise HTTPException(
+        status_code=404,
+        detail="Photo not found",
+    )
 
 
 @app.get("/api/browse/next")

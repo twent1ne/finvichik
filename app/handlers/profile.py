@@ -1,7 +1,9 @@
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import FSInputFile, Message
@@ -72,24 +74,138 @@ def format_profile(profile: dict[str, Any]) -> str:
 
 def get_local_photo_path(photo_file_id: str) -> Path | None:
     """
-    Если фото загружено через Mini App, оно хранится локально.
+    Если фото загружено через Mini App, оно может храниться локально.
 
     В базе оно выглядит так:
     local:profile_photos/123456789.jpg
 
     Эта функция превращает такую строку в путь к файлу.
+    Если файла уже нет на Render, возвращает None.
     """
 
     if not photo_file_id.startswith("local:"):
         return None
 
-    relative_path = photo_file_id.replace("local:", "", 1)
+    relative_path = photo_file_id.replace("local:", "", 1).lstrip("/")
+
+    if not relative_path:
+        return None
+
     file_path = UPLOADS_DIR / relative_path
 
-    if not file_path.exists():
+    try:
+        file_path.resolve().relative_to(UPLOADS_DIR.resolve())
+    except ValueError:
+        return None
+
+    if not file_path.exists() or not file_path.is_file():
         return None
 
     return file_path
+
+
+def normalize_photo_url(photo_url: str) -> str | None:
+    """
+    Нормализует внешний URL фото.
+
+    Telegram плохо принимает URL с внутренним Render-портом, например:
+    https://finvichik.onrender.com:10000/uploads/...
+
+    Поэтому порт убираем. Также отбрасываем локальные адреса,
+    которые Telegram всё равно не сможет открыть.
+    """
+
+    photo_url = photo_url.strip()
+
+    if not photo_url:
+        return None
+
+    parsed = urlsplit(photo_url)
+
+    if parsed.scheme not in {"http", "https"}:
+        return None
+
+    hostname = parsed.hostname
+
+    if not hostname:
+        return None
+
+    blocked_hosts = {
+        "0.0.0.0",
+        "127.0.0.1",
+        "localhost",
+    }
+
+    if hostname in blocked_hosts:
+        return None
+
+    netloc = hostname
+
+    if parsed.username or parsed.password:
+        return None
+
+    # Важно: порт специально не добавляем обратно.
+    # Telegram должен видеть публичный HTTPS URL без :10000.
+    normalized_url = urlunsplit(
+        (
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+    return normalized_url
+
+
+def resolve_photo_for_telegram(photo_file_id: str) -> FSInputFile | str | None:
+    """
+    Готовит фото для отправки в Telegram.
+
+    Возможные варианты:
+    - local:...          -> отправляем как FSInputFile, если файл существует;
+    - https://...        -> отправляем как URL, предварительно убирая порт;
+    - Telegram file_id   -> отправляем напрямую;
+    - битая ссылка/файл  -> возвращаем None.
+    """
+
+    photo_file_id = photo_file_id.strip()
+
+    if not photo_file_id:
+        return None
+
+    if photo_file_id.startswith("local:"):
+        local_photo_path = get_local_photo_path(photo_file_id)
+
+        if local_photo_path:
+            return FSInputFile(local_photo_path)
+
+        print(f"Фото профиля не найдено на сервере: {photo_file_id}")
+        return None
+
+    if photo_file_id.startswith(("http://", "https://")):
+        normalized_url = normalize_photo_url(photo_file_id)
+
+        if not normalized_url:
+            print(f"Некорректный URL фото профиля: {photo_file_id}")
+            return None
+
+        return normalized_url
+
+    # Если это не local: и не URL, считаем, что это Telegram file_id.
+    return photo_file_id
+
+
+async def send_profile_text(message: Message, text: str) -> None:
+    """
+    Отправляет анкету обычным текстом.
+    """
+
+    await message.answer(
+        text,
+        reply_markup=main_menu_keyboard(),
+    )
 
 
 async def send_profile_message(
@@ -99,38 +215,43 @@ async def send_profile_message(
     """
     Отправляет анкету пользователю.
 
-    Если есть фото:
-    - Telegram file_id отправляем напрямую;
-    - локальное фото из Mini App отправляем через FSInputFile.
+    Важно:
+    если фото битое, пропало с Render или Telegram не принимает URL,
+    обработчик не должен падать. В таком случае отправляем анкету текстом.
     """
 
     text = format_profile(profile)
     photo_file_id = profile.get("photo_file_id")
 
     if not photo_file_id:
-        await message.answer(
-            text,
-            reply_markup=main_menu_keyboard(),
-        )
+        await send_profile_text(message, text)
         return
 
-    photo_file_id = str(photo_file_id)
+    photo = resolve_photo_for_telegram(str(photo_file_id))
 
-    local_photo_path = get_local_photo_path(photo_file_id)
-
-    if local_photo_path:
-        await message.answer_photo(
-            photo=FSInputFile(local_photo_path),
-            caption=text,
-            reply_markup=main_menu_keyboard(),
-        )
+    if not photo:
+        await send_profile_text(message, text)
         return
 
-    await message.answer_photo(
-        photo=photo_file_id,
-        caption=text,
-        reply_markup=main_menu_keyboard(),
-    )
+    try:
+        # У Telegram есть лимит на caption. Если анкета длинная,
+        # сначала отправляем фото, потом полный текст отдельным сообщением.
+        if len(text) <= 1000:
+            await message.answer_photo(
+                photo=photo,
+                caption=text,
+                reply_markup=main_menu_keyboard(),
+            )
+        else:
+            await message.answer_photo(
+                photo=photo,
+                reply_markup=main_menu_keyboard(),
+            )
+            await message.answer(text)
+
+    except TelegramBadRequest as error:
+        print(f"Не удалось отправить фото профиля: {error}")
+        await send_profile_text(message, text)
 
 
 @router.message(F.text == "👤 Моя анкета")

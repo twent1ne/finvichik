@@ -23,12 +23,16 @@ def get_connection() -> psycopg.Connection:
     return psycopg.connect(
         DATABASE_URL,
         row_factory=dict_row,
+        autocommit=False,
     )
 
 
 def init_db() -> None:
     """
     Создаёт таблицы PostgreSQL, если они ещё не существуют.
+
+    Также добавляет недостающие колонки через ALTER TABLE.
+    Это важно, если таблицы уже были созданы старой версией проекта.
     """
 
     with get_connection() as connection:
@@ -47,6 +51,34 @@ def init_db() -> None:
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
+            """
+        )
+
+        connection.execute(
+            """
+            ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS username TEXT
+            """
+        )
+
+        connection.execute(
+            """
+            ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS photo_file_id TEXT
+            """
+        )
+
+        connection.execute(
+            """
+            ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
+            """
+        )
+
+        connection.execute(
+            """
+            ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
             """
         )
 
@@ -99,7 +131,65 @@ def init_db() -> None:
             """
         )
 
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_likes_from_user_id
+            ON likes(from_user_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_likes_to_user_id
+            ON likes(to_user_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_matches_user1_id
+            ON matches(user1_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_matches_user2_id
+            ON matches(user2_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_blocks_blocker_id
+            ON blocks(blocker_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_blocks_blocked_id
+            ON blocks(blocked_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_reports_reporter_id
+            ON reports(reporter_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_reports_reported_id
+            ON reports(reported_id)
+            """
+        )
+
         connection.commit()
+
+    print("База данных PostgreSQL готова.")
 
 
 def row_to_dict(row: dict[str, Any] | None) -> dict[str, Any] | None:

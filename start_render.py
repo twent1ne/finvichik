@@ -11,16 +11,24 @@ from web import app
 async def run_bot() -> None:
     """
     Запускает Telegram-бота в режиме polling.
+
+    Важно:
+    на Render Free polling может переставать отвечать после сна сервиса.
+    Для production лучше позже перейти на webhook.
     """
 
-    print("Бот «Финвичик» запускается...")
+    print("Бот «Финвичик» запускается в режиме polling...")
 
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 
 async def run_web() -> None:
     """
     Запускает FastAPI backend для Mini App.
+
     Render передаёт порт через переменную окружения PORT.
     """
 
@@ -47,7 +55,7 @@ async def main() -> None:
 
     init_db()
 
-    print("База данных SQLite готова.")
+    print("База данных PostgreSQL готова.")
     print("Запускаем backend и Telegram-бота...")
 
     await asyncio.gather(

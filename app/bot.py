@@ -1,7 +1,7 @@
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties
 
 from app.config import BOT_TOKEN
 from app.handlers import browse, matches, profile, start
@@ -20,6 +20,10 @@ dp = Dispatcher(
 )
 
 
+# Важен порядок:
+# сначала /start и базовое меню,
+# потом анкета,
+# потом просмотр и мэтчи.
 dp.include_router(start.router)
 dp.include_router(profile.router)
 dp.include_router(browse.router)
