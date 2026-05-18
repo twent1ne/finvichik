@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Финвичик</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <link rel="stylesheet" href="/static/styles.css?v=2">
+</head>
+<body>
+    <div class="app">
+        <section class="user-card-hidden">
+            <h2 id="telegramName">Загрузка...</h2>
+            <p id="telegramUsername"></p>
+        </section>
+
+        <nav class="tabs tabs-four">
+            <button class="tab-button active" data-tab="profile">
+                <span>👤</span>
+                Анкета
+            </button>
+            <button class="tab-button" data-tab="browse">
+                <span>🔎</span>
+                Анкеты
+            </button>
+            <button class="tab-button" data-tab="matches">
+                <span>💌</span>
+                Мэтчи
+            </button>
+            <button class="tab-button" data-tab="stats">
+                <span>📊</span>
+                Статистика
+            </button>
+        </nav>
+
+        <section id="profileTab" class="tab-content active">
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <p class="label">Профиль</p>
+                        <h2>Моя анкета</h2>
+                    </div>
+                    <div class="soft-icon">✎</div>
+                </div>
+
+                <div class="profile-photo-editor">
+                    <div id="myPhotoPreview" class="profile-photo-preview">
+                        <span id="myPhotoLetter">Ф</span>
+                    </div>
+
+                    <div class="photo-controls">
+                        <p class="photo-title">Фото профиля</p>
+                        <p class="photo-description">
+                            Это фото будет видно в твоей анкете и карточках Mini App.
+                        </p>
+
+                        <label class="photo-upload-button">
+                            Изменить фото
+                            <input id="profilePhotoInput" type="file" accept="image/*">
+                        </label>
+
+                        <p id="photoStatus" class="photo-status"></p>
+                    </div>
+                </div>
+
+                <p class="muted">
+                    Заполни данные о себе. Анкета сохранится в общей базе и будет доступна в боте и Mini App.
+                </p>
+
+                <form id="profileForm" class="form">
+                    <label>
+                        <span>Имя</span>
+                        <input id="name" name="name" type="text" placeholder="Например: Антон" required>
+                    </label>
+
+                    <label>
+                        <span>Факультет или направление</span>
+                        <input id="faculty" name="faculty" type="text" placeholder="Например: Бизнес-информатика" required>
+                    </label>
+
+                    <div class="form-grid">
+                        <label>
+                            <span>Курс</span>
+                            <select id="course" name="course" required>
+                                <option value="">Выбери</option>
+                                <option value="1">1 курс</option>
+                                <option value="2">2 курс</option>
+                                <option value="3">3 курс</option>
+                                <option value="4">4 курс</option>
+                                <option value="5">5 курс</option>
+                                <option value="6">6 курс</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Цель</span>
+                            <select id="goal" name="goal" required>
+                                <option value="">Выбери</option>
+                                <option value="Проект">Проект</option>
+                                <option value="Дружба">Дружба</option>
+                                <option value="Отношения">Отношения</option>
+                                <option value="Нетворкинг">Нетворкинг</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <label>
+                        <span>О себе</span>
+                        <textarea id="about" name="about" rows="4" placeholder="Коротко расскажи о себе" required></textarea>
+                    </label>
+
+                    <label>
+                        <span>Интересы</span>
+                        <textarea id="interests" name="interests" rows="3" placeholder="стартапы, финансы, музыка, спорт" required></textarea>
+                    </label>
+
+                    <button type="submit" class="primary-button">
+                        Сохранить анкету
+                    </button>
+                </form>
+
+                <p id="statusMessage" class="status"></p>
+            </section>
+        </section>
+
+        <section id="browseTab" class="tab-content">
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <p class="label">Просмотр</p>
+                        <h2>Смотреть анкеты</h2>
+                    </div>
+                    <div class="soft-icon">♡</div>
+                </div>
+
+                <p class="muted">
+                    Выбери фильтр и смотри анкеты других студентов. Username скрыт до взаимного лайка.
+                </p>
+
+                <div class="filter-section">
+                    <span class="filter-title">Фильтр по цели</span>
+
+                    <div id="goalFilters" class="goal-filters">
+                        <button type="button" class="goal-filter-chip active" data-goal="">
+                            Все анкеты
+                        </button>
+                        <button type="button" class="goal-filter-chip" data-goal="Проект">
+                            Проект
+                        </button>
+                        <button type="button" class="goal-filter-chip" data-goal="Дружба">
+                            Дружба
+                        </button>
+                        <button type="button" class="goal-filter-chip" data-goal="Отношения">
+                            Отношения
+                        </button>
+                        <button type="button" class="goal-filter-chip" data-goal="Нетворкинг">
+                            Нетворкинг
+                        </button>
+                    </div>
+                </div>
+
+                <button id="loadProfileButton" class="primary-button browse-load-button">
+                    Показать анкету
+                </button>
+
+                <div id="browseCard" class="browse-card hidden">
+                    <div class="profile-card-top">
+                        <p class="label">Анкета студента</p>
+                        <span class="profile-counter">Финвичик</span>
+                    </div>
+
+                    <div id="browseAvatar" class="student-avatar">
+                        <span id="browseAvatarLetter">Ф</span>
+                    </div>
+
+                    <h2 id="browseName"></h2>
+                    <p id="browseMeta" class="muted"></p>
+
+                    <div class="profile-block">
+                        <h3>О себе</h3>
+                        <p id="browseAbout"></p>
+                    </div>
+
+                    <div class="profile-block">
+                        <h3>Интересы</h3>
+                        <p id="browseInterests"></p>
+                    </div>
+
+                    <div class="action-grid">
+                        <button id="likeButton" class="action-button like">❤️ Лайк</button>
+                        <button id="skipButton" class="action-button skip">➡️ Пропустить</button>
+                        <button id="reportButton" class="action-button report">⚠️ Жалоба</button>
+                        <button id="blockButton" class="action-button block">🚫 Блок</button>
+                    </div>
+                </div>
+
+                <p id="browseStatus" class="status"></p>
+            </section>
+        </section>
+
+        <section id="matchesTab" class="tab-content">
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <p class="label">Взаимные симпатии</p>
+                        <h2>Мои мэтчи</h2>
+                    </div>
+                    <div class="soft-icon">💌</div>
+                </div>
+
+                <p class="muted">
+                    Здесь появятся пользователи, с которыми у тебя взаимный лайк.
+                    Telegram username показывается только после мэтча.
+                </p>
+
+                <button id="loadMatchesButton" class="primary-button browse-load-button">
+                    Обновить мэтчи
+                </button>
+
+                <div id="matchesList" class="matches-list"></div>
+
+                <p id="matchesStatus" class="status"></p>
+            </section>
+        </section>
+
+        <section id="statsTab" class="tab-content">
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <p class="label">Активность</p>
+                        <h2>Статистика</h2>
+                    </div>
+                    <div class="soft-icon">↗</div>
+                </div>
+
+                <p class="muted">
+                    Здесь показана общая активность внутри «Финвичика».
+                </p>
+
+                <button id="loadStatsButton" class="primary-button browse-load-button">
+                    Обновить статистику
+                </button>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span id="profilesCount">0</span>
+                        <p>Анкет</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="likesCount">0</span>
+                        <p>Лайков</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="skipsCount">0</span>
+                        <p>Пропусков</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="matchesCount">0</span>
+                        <p>Мэтчей</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="reportsCount">0</span>
+                        <p>Жалоб</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="blocksCount">0</span>
+                        <p>Блокировок</p>
+                    </div>
+                </div>
+
+                <p id="statsStatus" class="status"></p>
+            </section>
+        </section>
+    </div>
+
+    <script src="/static/app.js?v=17"></script>
+</body>
+</html>

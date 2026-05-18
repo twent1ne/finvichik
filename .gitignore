@@ -1,0 +1,32 @@
+# Virtual environment
+.venv/
+venv/
+
+# Secret environment files
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE files
+.idea/
+.vscode/
+
+# SQLite database files with real user data
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+data/finvichik.db
+data/uploads/
