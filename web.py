@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import html
 import json
 import time
 from pathlib import Path
@@ -10,9 +11,10 @@ from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.config import ALLOW_DEV_AUTH, BOT_TOKEN
+from app.bot import bot
+from app.config import ALLOW_DEV_AUTH, ADMIN_TELEGRAM_IDS, BOT_TOKEN
 from app.database import init_db
 from app.storage import (
     block_user,
@@ -45,6 +47,11 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 PROFILE_PHOTOS_DIR.mkdir(exist_ok=True)
 
 
+ALLOWED_GENDERS = ["Парень", "Девушка"]
+ALLOWED_GOALS = ["Проект", "Дружба", "Отношения", "Нетворкинг"]
+ALLOWED_COURSES = ["1", "2", "3", "4", "5", "6"]
+
+
 app = FastAPI(
     title="Финвичик Mini App Backend",
 )
@@ -57,9 +64,6 @@ app.mount(
 )
 
 
-# Оставляем /uploads для обратной совместимости:
-# старые ссылки могут ещё встречаться в кэше браузера или фронтенда.
-# Но новые photo_url ниже будут идти через /api/photo/{telegram_id}.
 app.mount(
     "/uploads",
     StaticFiles(directory=UPLOADS_DIR),
@@ -72,6 +76,8 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 class ProfileIn(BaseModel):
     name: str
+    gender: str
+    age: int = Field(ge=16, le=80)
     faculty: str
     course: str
     goal: str
@@ -83,6 +89,7 @@ class ProfileIn(BaseModel):
 class BrowseActionIn(BaseModel):
     target_user_id: int
     action: str
+    reason: Optional[str] = None
 
 
 class UnlikeProfileIn(BaseModel):
@@ -190,14 +197,259 @@ def get_current_telegram_user(
     )
 
 
+def validate_gender(gender: str | None) -> str | None:
+    """
+    Проверяет фильтр пола.
+    """
+
+    if not gender:
+        return None
+
+    gender = gender.strip()
+
+    if gender not in ALLOWED_GENDERS:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid gender filter",
+        )
+
+    return gender
+
+
+def validate_goal(goal: str | None) -> str | None:
+    """
+    Проверяет фильтр цели знакомства.
+    """
+
+    if not goal:
+        return None
+
+    goal = goal.strip()
+
+    if goal not in ALLOWED_GOALS:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid goal filter",
+        )
+
+    return goal
+
+
+def validate_course(course: str | None) -> str | None:
+    """
+    Проверяет фильтр курса.
+    """
+
+    if not course:
+        return None
+
+    course = course.strip()
+
+    if course not in ALLOWED_COURSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid course filter",
+        )
+
+    return course
+
+
+def validate_age_filter(age: int | None, field_name: str) -> int | None:
+    """
+    Проверяет фильтр возраста.
+    """
+
+    if age is None:
+        return None
+
+    if age < 16 or age > 80:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name} filter",
+        )
+
+    return age
+
+
+def validate_profile_payload(profile: ProfileIn) -> None:
+    """
+    Проверяет данные анкеты перед сохранением.
+    """
+
+    if profile.gender not in ALLOWED_GENDERS:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid gender",
+        )
+
+    if profile.course not in ALLOWED_COURSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid course",
+        )
+
+    if profile.goal not in ALLOWED_GOALS:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid goal",
+        )
+
+
+def normalize_report_reason(reason: str | None) -> str:
+    """
+    Нормализует текст жалобы из Mini App.
+    """
+
+    if not reason:
+        return "Причина не указана."
+
+    value = reason.strip()
+
+    if not value:
+        return "Причина не указана."
+
+    if len(value) > 1000:
+        value = value[:1000].strip() + "..."
+
+    return value
+
+
+def format_username(username: str | None) -> str:
+    """
+    Форматирует username для админского уведомления.
+    """
+
+    if not username:
+        return "не указан"
+
+    return f"@{username}"
+
+
+def format_datetime(value: Any) -> str:
+    """
+    Безопасно форматирует дату для Telegram-сообщения.
+    """
+
+    if not value:
+        return "—"
+
+    return str(value)
+
+
+def format_profile_for_admin(profile: dict[str, Any] | None) -> str:
+    """
+    Форматирует анкету для админского уведомления.
+    """
+
+    if not profile:
+        return "Анкета не найдена."
+
+    username = format_username(profile.get("username"))
+    moderation_status = profile.get("moderation_status") or "active"
+    blocked_until = format_datetime(profile.get("blocked_until"))
+    permanent_blocked_at = format_datetime(profile.get("permanent_blocked_at"))
+
+    return (
+        f"<b>ID:</b> <code>{html.escape(str(profile.get('telegram_id', '—')))}</code>\n"
+        f"<b>Username:</b> {html.escape(username)}\n"
+        f"<b>Имя:</b> {html.escape(str(profile.get('name') or '—'))}\n"
+        f"<b>Пол:</b> {html.escape(str(profile.get('gender') or '—'))}\n"
+        f"<b>Возраст:</b> {html.escape(str(profile.get('age') or '—'))}\n"
+        f"<b>Факультет:</b> {html.escape(str(profile.get('faculty') or '—'))}\n"
+        f"<b>Курс:</b> {html.escape(str(profile.get('course') or '—'))}\n"
+        f"<b>Цель:</b> {html.escape(str(profile.get('goal') or '—'))}\n"
+        f"<b>Статус модерации:</b> {html.escape(str(moderation_status))}\n"
+        f"<b>Блокировка до:</b> {html.escape(blocked_until)}\n"
+        f"<b>Вечная блокировка:</b> {html.escape(permanent_blocked_at)}\n\n"
+        f"<b>О себе:</b>\n{html.escape(str(profile.get('about') or '—'))}\n\n"
+        f"<b>Интересы:</b>\n{html.escape(str(profile.get('interests') or '—'))}"
+    )
+
+
+def build_admin_report_message(report_result: dict[str, Any]) -> str:
+    """
+    Собирает текст уведомления о жалобе для админов.
+    """
+
+    report = report_result.get("report") or {}
+    reporter_profile = report_result.get("reporter_profile")
+    reported_profile = report_result.get("reported_profile")
+    moderation = report_result.get("moderation") or {}
+
+    report_id = report.get("id", "—")
+    reporter_id = report.get("reporter_id", "—")
+    reported_id = report.get("reported_id", "—")
+    reason = report.get("reason") or "Причина не указана."
+
+    reports_24h = moderation.get("reports_24h", 0)
+    temporary_blocks_7d = moderation.get("temporary_blocks_7d", 0)
+    temporary_block_applied = moderation.get("temporary_block_applied", False)
+    permanent_block_applied = moderation.get("permanent_block_applied", False)
+    blocked_until = format_datetime(moderation.get("blocked_until"))
+
+    moderation_lines = [
+        f"<b>Жалоб за 24 часа:</b> {html.escape(str(reports_24h))}",
+        f"<b>Временных блокировок за 7 дней:</b> {html.escape(str(temporary_blocks_7d))}",
+    ]
+
+    if temporary_block_applied:
+        moderation_lines.append(
+            f"⏳ <b>Автоблокировка на сутки применена.</b>\n"
+            f"<b>До:</b> {html.escape(blocked_until)}"
+        )
+
+    if permanent_block_applied:
+        moderation_lines.append(
+            "⛔ <b>Анкета заблокирована навсегда.</b>"
+        )
+
+    reporter_username = (
+        format_username(reporter_profile.get("username"))
+        if reporter_profile
+        else "не указан"
+    )
+
+    return (
+        "🚨 <b>Новая жалоба</b>\n\n"
+        f"<b>ID жалобы:</b> <code>{html.escape(str(report_id))}</code>\n"
+        f"<b>От пользователя:</b> <code>{html.escape(str(reporter_id))}</code> "
+        f"({html.escape(reporter_username)})\n"
+        f"<b>На пользователя:</b> <code>{html.escape(str(reported_id))}</code>\n\n"
+        f"<b>Причина жалобы:</b>\n{html.escape(str(reason))}\n\n"
+        f"{chr(10).join(moderation_lines)}\n\n"
+        "<b>Анкета, на которую пожаловались:</b>\n"
+        f"{format_profile_for_admin(reported_profile)}\n\n"
+        f"Команды:\n"
+        f"/resolve_report_{html.escape(str(report_id))} — пометить жалобу обработанной\n"
+        f"/block_profile_{html.escape(str(reported_id))} — заблокировать анкету навсегда\n"
+        f"/unblock_profile_{html.escape(str(reported_id))} — разблокировать анкету"
+    )
+
+
+async def notify_admins_about_report(report_result: dict[str, Any]) -> None:
+    """
+    Отправляет уведомление о жалобе всем админам.
+    """
+
+    if not ADMIN_TELEGRAM_IDS:
+        print("ADMIN_TELEGRAM_IDS пустой. Уведомление о жалобе не отправлено.")
+        return
+
+    message_text = build_admin_report_message(report_result)
+
+    for admin_id in ADMIN_TELEGRAM_IDS:
+        try:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=message_text,
+            )
+        except Exception as error:
+            print(f"Не удалось отправить жалобу админу {admin_id}: {error}")
+
+
 def get_safe_local_photo_path(photo_file_id: str) -> Path | None:
     """
     Возвращает безопасный путь к локальному фото.
-
-    В базе локальные фото хранятся так:
-    local:profile_photos/123456789.jpg
-
-    Если файла нет или путь подозрительный, возвращаем None.
     """
 
     if not photo_file_id.startswith("local:"):
@@ -224,10 +476,6 @@ def get_safe_local_photo_path(photo_file_id: str) -> Path | None:
 def is_telegram_file_id(photo_file_id: str) -> bool:
     """
     Проверяет, похоже ли значение на Telegram file_id.
-
-    local:... — это локальный файл.
-    http/https — это внешний URL.
-    Всё остальное считаем Telegram file_id.
     """
 
     if photo_file_id.startswith("local:"):
@@ -242,15 +490,6 @@ def is_telegram_file_id(photo_file_id: str) -> bool:
 def get_photo_url(profile: dict[str, Any]) -> str | None:
     """
     Возвращает URL фотографии профиля для Mini App.
-
-    Важно:
-    больше не возвращаем прямой путь /uploads/profile_photos/...
-    Вместо этого всегда отдаём /api/photo/{telegram_id}.
-
-    Так backend сам решает:
-    - отдать локальный файл;
-    - сделать redirect на Telegram-файл;
-    - вернуть 404, если фото уже исчезло.
     """
 
     photo_file_id = profile.get("photo_file_id")
@@ -289,6 +528,8 @@ def profile_for_public_view(profile: dict[str, Any]) -> dict[str, Any]:
     return {
         "telegram_id": profile["telegram_id"],
         "name": profile["name"],
+        "gender": profile.get("gender"),
+        "age": profile.get("age"),
         "faculty": profile["faculty"],
         "course": profile["course"],
         "goal": profile["goal"],
@@ -332,9 +573,6 @@ def get_telegram_file_url(file_id: str) -> str:
 def delete_old_local_profile_photos(telegram_id: int, keep_file_name: str) -> None:
     """
     Удаляет старые локальные фото пользователя с другими расширениями.
-
-    Например, если было 123.png, а пользователь загрузил 123.jpg,
-    старый файл удаляем, чтобы не копить мусор.
     """
 
     for extension in (".jpg", ".jpeg", ".png", ".webp"):
@@ -422,6 +660,8 @@ async def api_save_my_profile(
     """
     Сохранить анкету текущего Telegram-пользователя.
     """
+
+    validate_profile_payload(profile)
 
     telegram_user = get_current_telegram_user(x_telegram_init_data)
 
@@ -534,9 +774,6 @@ async def api_upload_my_photo(
 async def api_get_profile_photo(telegram_id: int):
     """
     Возвращает фото профиля.
-
-    Если фото загружено из Mini App — отдаём локальный файл.
-    Если фото загружено через Telegram-бота — перенаправляем на файл Telegram.
     """
 
     profile = get_profile(telegram_id)
@@ -590,7 +827,11 @@ async def api_get_profile_photo(telegram_id: int):
 
 @app.get("/api/browse/next")
 async def api_get_next_profile(
+    gender: str | None = None,
+    age_min: int | None = None,
+    age_max: int | None = None,
     goal: str | None = None,
+    course: str | None = None,
     x_telegram_init_data: str | None = Header(default=None),
 ):
     """
@@ -608,17 +849,29 @@ async def api_get_next_profile(
             detail="Create your profile first",
         )
 
-    allowed_goals = ["Проект", "Дружба", "Отношения", "Нетворкинг"]
+    gender_filter = validate_gender(gender)
+    goal_filter = validate_goal(goal)
+    course_filter = validate_course(course)
+    normalized_age_min = validate_age_filter(age_min, "age_min")
+    normalized_age_max = validate_age_filter(age_max, "age_max")
 
-    if goal and goal not in allowed_goals:
+    if (
+        normalized_age_min is not None
+        and normalized_age_max is not None
+        and normalized_age_min > normalized_age_max
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Invalid goal filter",
+            detail="age_min cannot be greater than age_max",
         )
 
     profiles = get_profiles_for_viewer(
         viewer_id=viewer_id,
-        goal_filter=goal,
+        gender_filter=gender_filter,
+        age_min=normalized_age_min,
+        age_max=normalized_age_max,
+        goal_filter=goal_filter,
+        course_filter=course_filter,
     )
 
     if not profiles:
@@ -693,16 +946,25 @@ async def api_browse_action(
         }
 
     if action_data.action == "report":
-        report_user(
+        reason = normalize_report_reason(action_data.reason)
+
+        report_result = report_user(
             reporter_id=current_user_id,
             reported_id=target_user_id,
-            reason="Жалоба из Mini App",
+            reason=reason,
         )
+
+        await notify_admins_about_report(report_result)
+
+        moderation = report_result.get("moderation") or {}
 
         return {
             "ok": True,
             "action": "report",
             "match": False,
+            "report_id": (report_result.get("report") or {}).get("id"),
+            "temporary_block_applied": moderation.get("temporary_block_applied", False),
+            "permanent_block_applied": moderation.get("permanent_block_applied", False),
         }
 
     if action_data.action == "block":
@@ -729,10 +991,6 @@ async def api_undo_last_skip(
 ):
     """
     Возвращает последнюю случайно пропущенную анкету.
-
-    Работает только для действия skip:
-    - удаляет последний skip текущего пользователя;
-    - возвращает эту анкету обратно в просмотр.
     """
 
     telegram_user = get_current_telegram_user(x_telegram_init_data)
@@ -769,9 +1027,6 @@ async def api_unlike_profile(
 ):
     """
     Убирает лайк текущего пользователя с другой анкеты.
-
-    Если из-за этого был мэтч, он удаляется.
-    Лайк второго пользователя не удаляем.
     """
 
     telegram_user = get_current_telegram_user(x_telegram_init_data)

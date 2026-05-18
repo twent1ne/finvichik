@@ -15,6 +15,8 @@ const statusMessage = document.getElementById("statusMessage");
 const profileForm = document.getElementById("profileForm");
 
 const nameInput = document.getElementById("name");
+const genderInput = document.getElementById("gender");
+const ageInput = document.getElementById("age");
 const facultyInput = document.getElementById("faculty");
 const courseInput = document.getElementById("course");
 const goalInput = document.getElementById("goal");
@@ -34,6 +36,12 @@ const matchesTab = document.getElementById("matchesTab");
 const statsTab = document.getElementById("statsTab");
 
 const goalFilterButtons = document.querySelectorAll(".goal-filter-chip");
+const genderFilterInput = document.getElementById("genderFilter");
+const ageMinFilterInput = document.getElementById("ageMinFilter");
+const ageMaxFilterInput = document.getElementById("ageMaxFilter");
+const courseFilterInput = document.getElementById("courseFilter");
+const resetFiltersButton = document.getElementById("resetFiltersButton");
+
 const loadProfileButton = document.getElementById("loadProfileButton");
 const browseCard = document.getElementById("browseCard");
 const browseStatus = document.getElementById("browseStatus");
@@ -44,6 +52,12 @@ const browseName = document.getElementById("browseName");
 const browseMeta = document.getElementById("browseMeta");
 const browseAbout = document.getElementById("browseAbout");
 const browseInterests = document.getElementById("browseInterests");
+
+const reportForm = document.getElementById("reportForm");
+const reportReasonSelect = document.getElementById("reportReason");
+const reportCommentInput = document.getElementById("reportComment");
+const submitReportButton = document.getElementById("submitReportButton");
+const cancelReportButton = document.getElementById("cancelReportButton");
 
 const backButton = document.getElementById("backButton");
 const likeButton = document.getElementById("likeButton");
@@ -64,6 +78,11 @@ const skipsCount = document.getElementById("skipsCount");
 const matchesCount = document.getElementById("matchesCount");
 const reportsCount = document.getElementById("reportsCount");
 const blocksCount = document.getElementById("blocksCount");
+
+const activeProfilesCount = document.getElementById("activeProfilesCount");
+const temporaryBlockedProfilesCount = document.getElementById("temporaryBlockedProfilesCount");
+const permanentlyBlockedProfilesCount = document.getElementById("permanentlyBlockedProfilesCount");
+const newReportsCount = document.getElementById("newReportsCount");
 
 let currentBrowseProfile = null;
 let selectedBrowseGoal = "";
@@ -201,6 +220,147 @@ function setActiveGoalFilter(goal) {
 }
 
 
+function getAgeValue(input) {
+    const value = Number(input.value);
+
+    if (!Number.isInteger(value)) {
+        return null;
+    }
+
+    if (value < 16 || value > 80) {
+        return null;
+    }
+
+    return value;
+}
+
+
+function buildBrowseQuery() {
+    const params = new URLSearchParams();
+
+    if (selectedBrowseGoal) {
+        params.set("goal", selectedBrowseGoal);
+    }
+
+    if (genderFilterInput?.value) {
+        params.set("gender", genderFilterInput.value);
+    }
+
+    if (courseFilterInput?.value) {
+        params.set("course", courseFilterInput.value);
+    }
+
+    if (ageMinFilterInput?.value) {
+        params.set("age_min", ageMinFilterInput.value);
+    }
+
+    if (ageMaxFilterInput?.value) {
+        params.set("age_max", ageMaxFilterInput.value);
+    }
+
+    const queryString = params.toString();
+
+    return queryString ? `?${queryString}` : "";
+}
+
+
+function resetBrowseFilters() {
+    setActiveGoalFilter("");
+
+    if (genderFilterInput) {
+        genderFilterInput.value = "";
+    }
+
+    if (ageMinFilterInput) {
+        ageMinFilterInput.value = "";
+    }
+
+    if (ageMaxFilterInput) {
+        ageMaxFilterInput.value = "";
+    }
+
+    if (courseFilterInput) {
+        courseFilterInput.value = "";
+    }
+
+    setBrowseStatus("Фильтры сброшены.");
+}
+
+
+function openReportForm() {
+    if (!currentBrowseProfile) {
+        setBrowseStatus("Сначала загрузи анкету.", "error");
+        return;
+    }
+
+    if (!reportForm) {
+        setBrowseStatus("Форма жалобы не найдена. Обнови Mini App.", "error");
+        return;
+    }
+
+    if (reportReasonSelect) {
+        reportReasonSelect.value = "";
+    }
+
+    if (reportCommentInput) {
+        reportCommentInput.value = "";
+    }
+
+    reportForm.classList.remove("hidden");
+    setBrowseStatus("Опиши причину жалобы и отправь её модераторам.");
+}
+
+
+function closeReportForm() {
+    if (!reportForm) {
+        return;
+    }
+
+    reportForm.classList.add("hidden");
+
+    if (reportReasonSelect) {
+        reportReasonSelect.value = "";
+    }
+
+    if (reportCommentInput) {
+        reportCommentInput.value = "";
+    }
+}
+
+
+function buildReportReason() {
+    const selectedReason = reportReasonSelect?.value?.trim() || "";
+    const comment = reportCommentInput?.value?.trim() || "";
+
+    if (!selectedReason && !comment) {
+        return "";
+    }
+
+    if (selectedReason && comment) {
+        return `${selectedReason}: ${comment}`;
+    }
+
+    return selectedReason || comment;
+}
+
+
+async function submitReport() {
+    if (!currentBrowseProfile) {
+        setBrowseStatus("Сначала загрузи анкету.", "error");
+        return;
+    }
+
+    const reason = buildReportReason();
+
+    if (!reason) {
+        setBrowseStatus("Выбери причину жалобы или напиши комментарий.", "error");
+        return;
+    }
+
+    await sendBrowseAction("report", reason);
+}
+
+
 async function fillTelegramUserInfo() {
     try {
         const response = await fetch("/api/me", {
@@ -267,6 +427,8 @@ async function loadProfile() {
         const profile = await response.json();
 
         nameInput.value = profile.name || "";
+        genderInput.value = profile.gender || "";
+        ageInput.value = profile.age || "";
         facultyInput.value = profile.faculty || "";
         courseInput.value = profile.course || "";
         goalInput.value = profile.goal || "";
@@ -293,8 +455,17 @@ async function loadProfile() {
 async function saveProfile(event) {
     event.preventDefault();
 
+    const age = getAgeValue(ageInput);
+
+    if (age === null) {
+        setStatus("Укажи возраст числом от 16 до 80.", "error");
+        return;
+    }
+
     const payload = {
         name: nameInput.value.trim(),
+        gender: genderInput.value,
+        age: age,
         faculty: facultyInput.value.trim(),
         course: courseInput.value,
         goal: goalInput.value,
@@ -305,6 +476,8 @@ async function saveProfile(event) {
 
     if (
         !payload.name ||
+        !payload.gender ||
+        !payload.age ||
         !payload.faculty ||
         !payload.course ||
         !payload.goal ||
@@ -448,6 +621,8 @@ function switchTab(tabName) {
 function renderBrowseProfile(profile) {
     currentBrowseProfile = profile;
 
+    closeReportForm();
+
     if (!profile) {
         browseCard.classList.add("hidden");
         return;
@@ -455,8 +630,11 @@ function renderBrowseProfile(profile) {
 
     browseName.textContent = profile.name;
 
+    const genderText = profile.gender || "пол не указан";
+    const ageText = profile.age ? `${profile.age} лет` : "возраст не указан";
+
     browseMeta.textContent =
-        `${profile.faculty} · ${profile.course} курс · ${profile.goal}`;
+        `${genderText} · ${ageText} · ${profile.faculty} · ${profile.course} курс · ${profile.goal}`;
 
     browseAbout.textContent = profile.about;
     browseInterests.textContent = profile.interests;
@@ -476,10 +654,9 @@ async function loadNextBrowseProfile() {
     setBrowseStatus("Загрузка анкеты...");
     browseCard.classList.add("hidden");
     currentBrowseProfile = null;
+    closeReportForm();
 
-    const query = selectedBrowseGoal
-        ? `?goal=${encodeURIComponent(selectedBrowseGoal)}`
-        : "";
+    const query = buildBrowseQuery();
 
     try {
         const response = await fetch(`/api/browse/next${query}`, {
@@ -488,7 +665,7 @@ async function loadNextBrowseProfile() {
         });
 
         if (response.status === 400) {
-            setBrowseStatus("Сначала создай свою анкету во вкладке «Анкета».", "error");
+            setBrowseStatus("Проверь фильтры или сначала создай свою анкету во вкладке «Анкета».", "error");
             return;
         }
 
@@ -505,7 +682,7 @@ async function loadNextBrowseProfile() {
 
         if (!data.profile) {
             renderBrowseProfile(null);
-            setBrowseStatus("Анкеты закончились. Попробуй позже или выбери другой фильтр.");
+            setBrowseStatus("Анкеты закончились. Попробуй позже или измени фильтры.");
             return;
         }
 
@@ -565,20 +742,26 @@ async function undoLastSkip() {
 }
 
 
-async function sendBrowseAction(action) {
+async function sendBrowseAction(action, reason = null) {
     if (!currentBrowseProfile) {
         setBrowseStatus("Сначала загрузи анкету.", "error");
         return;
+    }
+
+    const payload = {
+        target_user_id: currentBrowseProfile.telegram_id,
+        action: action
+    };
+
+    if (action === "report") {
+        payload.reason = reason;
     }
 
     try {
         const response = await fetch("/api/browse/action", {
             method: "POST",
             headers: getAuthHeaders(),
-            body: JSON.stringify({
-                target_user_id: currentBrowseProfile.telegram_id,
-                action: action
-            })
+            body: JSON.stringify(payload)
         });
 
         if (response.status === 401) {
@@ -614,7 +797,21 @@ async function sendBrowseAction(action) {
         }
 
         if (action === "report") {
-            setBrowseStatus("⚠️ Жалоба сохранена. Анкета скрыта.", "success");
+            closeReportForm();
+
+            if (data.permanent_block_applied) {
+                setBrowseStatus(
+                    "⚠️ Жалоба отправлена. Анкета заблокирована навсегда из-за повторных нарушений.",
+                    "success"
+                );
+            } else if (data.temporary_block_applied) {
+                setBrowseStatus(
+                    "⚠️ Жалоба отправлена. Анкета временно скрыта модерацией.",
+                    "success"
+                );
+            } else {
+                setBrowseStatus("⚠️ Жалоба отправлена модераторам. Анкета скрыта.", "success");
+            }
         }
 
         if (action === "block") {
@@ -706,6 +903,9 @@ function renderMatches(matches) {
             ? `@${escapeHtml(profile.username)}`
             : "username не указан";
 
+        const gender = profile.gender || "—";
+        const age = profile.age || "—";
+
         const card = document.createElement("div");
         card.className = "match-card";
 
@@ -724,6 +924,8 @@ function renderMatches(matches) {
 
         content.innerHTML = `
             <h3>${escapeHtml(profile.name)}</h3>
+            <p><b>Пол:</b> ${escapeHtml(gender)}</p>
+            <p><b>Возраст:</b> ${escapeHtml(age)}</p>
             <p><b>Факультет / направление:</b> ${escapeHtml(profile.faculty)}</p>
             <p><b>Курс:</b> ${escapeHtml(profile.course)}</p>
             <p><b>Цель:</b> ${escapeHtml(profile.goal)}</p>
@@ -809,6 +1011,22 @@ async function loadStats() {
         reportsCount.textContent = stats.reports_count ?? 0;
         blocksCount.textContent = stats.blocks_count ?? 0;
 
+        if (activeProfilesCount) {
+            activeProfilesCount.textContent = stats.active_profiles_count ?? 0;
+        }
+
+        if (temporaryBlockedProfilesCount) {
+            temporaryBlockedProfilesCount.textContent = stats.temporary_blocked_profiles_count ?? 0;
+        }
+
+        if (permanentlyBlockedProfilesCount) {
+            permanentlyBlockedProfilesCount.textContent = stats.permanently_blocked_profiles_count ?? 0;
+        }
+
+        if (newReportsCount) {
+            newReportsCount.textContent = stats.new_reports_count ?? 0;
+        }
+
         setStatsStatus("Статистика обновлена.", "success");
     } catch (error) {
         setStatsStatus("Ошибка загрузки статистики.", "error");
@@ -829,6 +1047,18 @@ goalFilterButtons.forEach((button) => {
     });
 });
 
+if (resetFiltersButton) {
+    resetFiltersButton.addEventListener("click", resetBrowseFilters);
+}
+
+if (cancelReportButton) {
+    cancelReportButton.addEventListener("click", closeReportForm);
+}
+
+if (submitReportButton) {
+    submitReportButton.addEventListener("click", submitReport);
+}
+
 profileForm.addEventListener("submit", saveProfile);
 profilePhotoInput.addEventListener("change", uploadProfilePhoto);
 
@@ -837,7 +1067,7 @@ loadProfileButton.addEventListener("click", loadNextBrowseProfile);
 backButton.addEventListener("click", undoLastSkip);
 likeButton.addEventListener("click", () => sendBrowseAction("like"));
 skipButton.addEventListener("click", () => sendBrowseAction("skip"));
-reportButton.addEventListener("click", () => sendBrowseAction("report"));
+reportButton.addEventListener("click", openReportForm);
 blockButton.addEventListener("click", () => sendBrowseAction("block"));
 
 loadMatchesButton.addEventListener("click", loadMatches);

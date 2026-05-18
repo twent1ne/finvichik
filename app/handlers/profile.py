@@ -6,7 +6,7 @@ from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import FSInputFile, Message
+from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup
 
 from app.keyboards import (
     blocked_users_keyboard,
@@ -32,18 +32,104 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 UPLOADS_DIR = BASE_DIR / "data" / "uploads"
 
 
+ALLOWED_GENDERS = ["Парень", "Девушка"]
+ALLOWED_AGES = list(range(16, 81))
+
+
 class ProfileForm(StatesGroup):
     """
     Состояния заполнения анкеты.
     """
 
     name = State()
+    gender = State()
+    age = State()
     faculty = State()
     course = State()
     goal = State()
     about = State()
     interests = State()
     photo = State()
+
+
+def gender_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Клавиатура выбора пола.
+    """
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="Парень"),
+                KeyboardButton(text="Девушка"),
+            ],
+            [
+                KeyboardButton(text="❌ Отмена"),
+            ],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def normalize_age_text(age_text: str) -> int | None:
+    """
+    Проверяет и нормализует возраст.
+    """
+
+    try:
+        age = int(age_text.strip())
+    except ValueError:
+        return None
+
+    if age not in ALLOWED_AGES:
+        return None
+
+    return age
+
+
+def format_datetime_for_user(value: Any) -> str:
+    """
+    Безопасно форматирует дату для сообщения пользователю.
+    """
+
+    if not value:
+        return "—"
+
+    return str(value)
+
+
+def format_moderation_notice(profile: dict[str, Any]) -> str:
+    """
+    Формирует предупреждение о модерационном статусе анкеты.
+
+    Это видно только владельцу анкеты в разделе «Моя анкета».
+    """
+
+    moderation_status = profile.get("moderation_status") or "active"
+
+    if moderation_status == "temporary_block":
+        blocked_until = format_datetime_for_user(profile.get("blocked_until"))
+
+        return (
+            "\n\n"
+            "⚠️ <b>Статус анкеты:</b> временно скрыта модерацией.\n"
+            f"<b>Блокировка до:</b> {blocked_until}\n\n"
+            "Анкета временно не показывается другим пользователям."
+        )
+
+    if moderation_status == "permanent_block":
+        permanent_blocked_at = format_datetime_for_user(
+            profile.get("permanent_blocked_at")
+        )
+
+        return (
+            "\n\n"
+            "⛔ <b>Статус анкеты:</b> заблокирована навсегда.\n"
+            f"<b>Дата блокировки:</b> {permanent_blocked_at}\n\n"
+            "Анкета больше не показывается другим пользователям."
+        )
+
+    return ""
 
 
 def format_profile(profile: dict[str, Any]) -> str:
@@ -60,15 +146,28 @@ def format_profile(profile: dict[str, Any]) -> str:
     else:
         username_text = "не указан"
 
+    gender = profile.get("gender") or "—"
+    age = profile.get("age")
+
+    if age:
+        age_text = str(age)
+    else:
+        age_text = "—"
+
+    moderation_notice = format_moderation_notice(profile)
+
     return (
         "👤 <b>Анкета</b>\n\n"
         f"<b>Имя:</b> {profile.get('name', '—')}\n"
+        f"<b>Пол:</b> {gender}\n"
+        f"<b>Возраст:</b> {age_text}\n"
         f"<b>Факультет / направление:</b> {profile.get('faculty', '—')}\n"
         f"<b>Курс:</b> {profile.get('course', '—')}\n"
         f"<b>Цель знакомства:</b> {profile.get('goal', '—')}\n\n"
         f"<b>О себе:</b>\n{profile.get('about', '—')}\n\n"
         f"<b>Интересы:</b>\n{profile.get('interests', '—')}\n\n"
         f"<b>Telegram:</b> {username_text}"
+        f"{moderation_notice}"
     )
 
 
@@ -144,8 +243,6 @@ def normalize_photo_url(photo_url: str) -> str | None:
     if parsed.username or parsed.password:
         return None
 
-    # Важно: порт специально не добавляем обратно.
-    # Telegram должен видеть публичный HTTPS URL без :10000.
     normalized_url = urlunsplit(
         (
             parsed.scheme,
@@ -193,7 +290,6 @@ def resolve_photo_for_telegram(photo_file_id: str) -> FSInputFile | str | None:
 
         return normalized_url
 
-    # Если это не local: и не URL, считаем, что это Telegram file_id.
     return photo_file_id
 
 
@@ -215,8 +311,7 @@ async def send_profile_message(
     """
     Отправляет анкету пользователю.
 
-    Важно:
-    если фото битое, пропало с Render или Telegram не принимает URL,
+    Если фото битое, пропало с Render или Telegram не принимает URL,
     обработчик не должен падать. В таком случае отправляем анкету текстом.
     """
 
@@ -234,8 +329,6 @@ async def send_profile_message(
         return
 
     try:
-        # У Telegram есть лимит на caption. Если анкета длинная,
-        # сначала отправляем фото, потом полный текст отдельным сообщением.
         if len(text) <= 1000:
             await message.answer_photo(
                 photo=photo,
@@ -311,6 +404,8 @@ async def edit_profile_button(message: Message, state: FSMContext) -> None:
 
 
 @router.message(ProfileForm.name, F.text == "❌ Отмена")
+@router.message(ProfileForm.gender, F.text == "❌ Отмена")
+@router.message(ProfileForm.age, F.text == "❌ Отмена")
 @router.message(ProfileForm.faculty, F.text == "❌ Отмена")
 @router.message(ProfileForm.course, F.text == "❌ Отмена")
 @router.message(ProfileForm.goal, F.text == "❌ Отмена")
@@ -349,7 +444,68 @@ async def process_name(message: Message, state: FSMContext) -> None:
     await state.update_data(name=name)
 
     await message.answer(
-        "Отлично.\n\n"
+        "Выбери свой пол:",
+        reply_markup=gender_keyboard(),
+    )
+
+    await state.set_state(ProfileForm.gender)
+
+
+@router.message(ProfileForm.gender)
+async def process_gender(message: Message, state: FSMContext) -> None:
+    """
+    Сохраняет пол.
+    """
+
+    if not message.text:
+        await message.answer(
+            "Пожалуйста, выбери пол кнопкой.",
+            reply_markup=gender_keyboard(),
+        )
+        return
+
+    gender = message.text.strip()
+
+    if gender not in ALLOWED_GENDERS:
+        await message.answer(
+            "Пожалуйста, выбери пол с помощью кнопок.",
+            reply_markup=gender_keyboard(),
+        )
+        return
+
+    await state.update_data(gender=gender)
+
+    await message.answer(
+        "Теперь напиши свой возраст числом.\n\n"
+        "Например: 18",
+        reply_markup=cancel_keyboard(),
+    )
+
+    await state.set_state(ProfileForm.age)
+
+
+@router.message(ProfileForm.age)
+async def process_age(message: Message, state: FSMContext) -> None:
+    """
+    Сохраняет возраст.
+    """
+
+    if not message.text:
+        await message.answer("Пожалуйста, напиши возраст числом.")
+        return
+
+    age = normalize_age_text(message.text)
+
+    if age is None:
+        await message.answer(
+            "Пожалуйста, укажи реальный возраст числом от 16 до 80.\n\n"
+            "Например: 19"
+        )
+        return
+
+    await state.update_data(age=age)
+
+    await message.answer(
         "Теперь напиши факультет или направление.\n"
         "Например: «Бизнес-информатика», «Экономика», «Финансы и кредит».",
         reply_markup=cancel_keyboard(),
@@ -566,6 +722,8 @@ async def finish_profile_creation(message: Message, state: FSMContext) -> None:
     profile = {
         "username": message.from_user.username,
         "name": data["name"],
+        "gender": data["gender"],
+        "age": data["age"],
         "faculty": data["faculty"],
         "course": data["course"],
         "goal": data["goal"],
@@ -649,9 +807,17 @@ async def blocked_users_button(message: Message) -> None:
     ]
 
     for index, profile in enumerate(blocked_profiles, start=1):
+        gender = profile.get("gender") or "—"
+        age = profile.get("age") or "—"
+        moderation_status = profile.get("moderation_status") or "active"
+
         text_parts.append(
             f"{index}. <b>{profile['name']}</b>\n"
+            f"Пол: {gender}\n"
+            f"Возраст: {age}\n"
+            f"Курс: {profile['course']}\n"
             f"Цель: {profile['goal']}\n"
+            f"Статус анкеты: {moderation_status}\n"
             f"Интересы: {profile['interests']}"
         )
 

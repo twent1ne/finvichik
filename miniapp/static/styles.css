@@ -87,10 +87,10 @@ h3 {
     overflow: hidden;
 }
 
-/* Главное исправление: длинный текст больше не вылезает из карточек */
 .card,
 .browse-card,
 .profile-block,
+.report-form,
 .match-card,
 .match-card-content,
 .photo-controls,
@@ -103,6 +103,7 @@ h3 {
 .card p,
 .browse-card p,
 .profile-block p,
+.report-form p,
 .match-card p,
 .match-contact,
 .status,
@@ -298,6 +299,10 @@ textarea {
     gap: 12px;
 }
 
+.filter-grid {
+    margin-bottom: 12px;
+}
+
 label {
     display: flex;
     flex-direction: column;
@@ -340,22 +345,40 @@ textarea {
     resize: vertical;
 }
 
-.primary-button {
+.primary-button,
+.secondary-button {
     border: none;
     border-radius: 18px;
     padding: 15px 18px;
-    background: linear-gradient(135deg, var(--green), var(--green-dark));
-    color: #ffffff;
     font-weight: 850;
     font-size: 16px;
     cursor: pointer;
-    box-shadow: 0 14px 22px rgba(31, 122, 92, 0.22);
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
 
+.primary-button {
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    color: #ffffff;
+    box-shadow: 0 14px 22px rgba(31, 122, 92, 0.22);
+}
+
+.secondary-button {
+    width: 100%;
+    margin-top: 12px;
+    background: #f8fcfa;
+    color: var(--green);
+    border: 1px solid rgba(31, 122, 92, 0.18);
+    box-shadow: 0 8px 16px rgba(31, 122, 92, 0.06);
+}
+
+.secondary-button:hover {
+    background: #eef8f3;
+}
+
 .primary-button:active,
+.secondary-button:active,
 .action-button:active,
 .tab-button:active,
 .photo-upload-button:active,
@@ -388,11 +411,15 @@ textarea {
 
 .filter-section {
     margin-top: 18px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    background: #f8fcfa;
 }
 
 .filter-title {
     display: block;
-    margin-bottom: 10px;
+    margin: 4px 0 10px;
     font-size: 14px;
     font-weight: 800;
     color: #30423b;
@@ -406,7 +433,7 @@ textarea {
 
 .goal-filter-chip {
     border: 1px solid rgba(31, 122, 92, 0.18);
-    background: #f8fcfa;
+    background: #ffffff;
     color: var(--green);
     padding: 11px 16px;
     border-radius: 999px;
@@ -484,7 +511,8 @@ textarea {
     object-fit: cover;
 }
 
-.profile-block {
+.profile-block,
+.report-form {
     margin: 16px 0;
     padding: 15px;
     border-radius: 20px;
@@ -502,6 +530,30 @@ textarea {
     overflow-wrap: anywhere;
     word-break: break-word;
     hyphens: auto;
+}
+
+.report-form {
+    background: #fff7ed;
+    border-color: #fed7aa;
+}
+
+.report-form h3 {
+    color: var(--warning);
+}
+
+.report-form label {
+    margin-top: 12px;
+}
+
+.report-form textarea {
+    min-height: 94px;
+}
+
+.report-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
 }
 
 .action-grid {
@@ -622,6 +674,25 @@ textarea {
     overflow-wrap: anywhere;
 }
 
+.match-unlike-button {
+    width: 100%;
+    margin-top: 12px;
+    border: none;
+    border-radius: 16px;
+    padding: 11px 13px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-weight: 850;
+    cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.match-unlike-button:active {
+    transform: scale(0.99);
+}
+
 .stats-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -688,7 +759,8 @@ textarea {
         padding: 9px 4px;
     }
 
-    .form-grid {
+    .form-grid,
+    .report-actions {
         grid-template-columns: 1fr;
     }
 
@@ -708,24 +780,8 @@ textarea {
         font-size: 13px;
         padding: 10px 14px;
     }
-}
 
-
-.match-unlike-button {
-    width: 100%;
-    margin-top: 12px;
-    border: none;
-    border-radius: 16px;
-    padding: 11px 13px;
-    background: #fee2e2;
-    color: #991b1b;
-    font-weight: 850;
-    cursor: pointer;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-}
-
-.match-unlike-button:active {
-    transform: scale(0.99);
+    .filter-section {
+        padding: 12px;
+    }
 }

@@ -8,7 +8,7 @@
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-    <link rel="stylesheet" href="/static/styles.css?v=4">
+    <link rel="stylesheet" href="/static/styles.css?v=6">
 </head>
 <body>
     <div class="app">
@@ -76,6 +76,22 @@
                         <input id="name" name="name" type="text" placeholder="Например: Антон" required>
                     </label>
 
+                    <div class="form-grid">
+                        <label>
+                            <span>Пол</span>
+                            <select id="gender" name="gender" required>
+                                <option value="">Выбери</option>
+                                <option value="Парень">Парень</option>
+                                <option value="Девушка">Девушка</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Возраст</span>
+                            <input id="age" name="age" type="number" min="16" max="80" placeholder="18" required>
+                        </label>
+                    </div>
+
                     <label>
                         <span>Факультет или направление</span>
                         <input id="faculty" name="faculty" type="text" placeholder="Например: Бизнес-информатика" required>
@@ -137,11 +153,49 @@
                 </div>
 
                 <p class="muted">
-                    Выбери фильтр и смотри анкеты других студентов. Username скрыт до взаимного лайка.
+                    Настрой фильтры и смотри анкеты других студентов. Username скрыт до взаимного лайка.
                 </p>
 
                 <div class="filter-section">
-                    <span class="filter-title">Фильтр по цели</span>
+                    <span class="filter-title">Фильтры</span>
+
+                    <div class="form-grid filter-grid">
+                        <label>
+                            <span>Пол</span>
+                            <select id="genderFilter" name="genderFilter">
+                                <option value="">Любой</option>
+                                <option value="Парень">Парень</option>
+                                <option value="Девушка">Девушка</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Курс</span>
+                            <select id="courseFilter" name="courseFilter">
+                                <option value="">Любой</option>
+                                <option value="1">1 курс</option>
+                                <option value="2">2 курс</option>
+                                <option value="3">3 курс</option>
+                                <option value="4">4 курс</option>
+                                <option value="5">5 курс</option>
+                                <option value="6">6 курс</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="form-grid filter-grid">
+                        <label>
+                            <span>Возраст от</span>
+                            <input id="ageMinFilter" name="ageMinFilter" type="number" min="16" max="80" placeholder="16">
+                        </label>
+
+                        <label>
+                            <span>Возраст до</span>
+                            <input id="ageMaxFilter" name="ageMaxFilter" type="number" min="16" max="80" placeholder="80">
+                        </label>
+                    </div>
+
+                    <span class="filter-title">Цель знакомства</span>
 
                     <div id="goalFilters" class="goal-filters">
                         <button type="button" class="goal-filter-chip active" data-goal="">
@@ -160,6 +214,10 @@
                             Нетворкинг
                         </button>
                     </div>
+
+                    <button id="resetFiltersButton" type="button" class="secondary-button">
+                        Сбросить фильтры
+                    </button>
                 </div>
 
                 <button id="loadProfileButton" class="primary-button browse-load-button">
@@ -187,6 +245,40 @@
                     <div class="profile-block">
                         <h3>Интересы</h3>
                         <p id="browseInterests"></p>
+                    </div>
+
+                    <div id="reportForm" class="report-form hidden">
+                        <h3>⚠️ Жалоба на анкету</h3>
+                        <p class="muted">
+                            Опиши, что не так с анкетой. Жалоба уйдёт модераторам, а эта анкета будет скрыта для тебя.
+                        </p>
+
+                        <label>
+                            <span>Причина</span>
+                            <select id="reportReason" name="reportReason">
+                                <option value="">Выбери причину</option>
+                                <option value="Спам или реклама">Спам или реклама</option>
+                                <option value="Оскорбления или агрессия">Оскорбления или агрессия</option>
+                                <option value="Неприемлемое фото">Неприемлемое фото</option>
+                                <option value="Фейковая анкета">Фейковая анкета</option>
+                                <option value="Чужие данные или фото">Чужие данные или фото</option>
+                                <option value="Другое">Другое</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Комментарий</span>
+                            <textarea id="reportComment" name="reportComment" rows="3" placeholder="Например: пользователь указал чужое фото или пишет оскорбления"></textarea>
+                        </label>
+
+                        <div class="report-actions">
+                            <button id="submitReportButton" type="button" class="action-button report">
+                                Отправить жалобу
+                            </button>
+                            <button id="cancelReportButton" type="button" class="action-button skip">
+                                Отмена
+                            </button>
+                        </div>
                     </div>
 
                     <div class="action-grid">
@@ -248,7 +340,19 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <span id="profilesCount">0</span>
-                        <p>Анкет</p>
+                        <p>Анкет всего</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="activeProfilesCount">0</span>
+                        <p>Активных анкет</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="temporaryBlockedProfilesCount">0</span>
+                        <p>Временных блокировок</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="permanentlyBlockedProfilesCount">0</span>
+                        <p>Вечных блокировок</p>
                     </div>
                     <div class="stat-card">
                         <span id="likesCount">0</span>
@@ -264,7 +368,11 @@
                     </div>
                     <div class="stat-card">
                         <span id="reportsCount">0</span>
-                        <p>Жалоб</p>
+                        <p>Жалоб всего</p>
+                    </div>
+                    <div class="stat-card">
+                        <span id="newReportsCount">0</span>
+                        <p>Новых жалоб</p>
                     </div>
                     <div class="stat-card">
                         <span id="blocksCount">0</span>
@@ -277,6 +385,6 @@
         </section>
     </div>
 
-    <script src="/static/app.js?v=19"></script>
+    <script src="/static/app.js?v=21"></script>
 </body>
 </html>
