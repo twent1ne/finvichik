@@ -116,6 +116,7 @@ def normalize_photo_file_id(photo_file_id: Any) -> str | None:
     - None или пустая строка -> None
     - Telegram file_id -> сохраняем как есть
     - local:profile_photos/123.jpg -> сохраняем как есть
+    - cloudinary:finvichik/profile_photos/123/123456789 -> сохраняем как есть
     - https://...:10000/... -> убираем порт, чтобы Telegram не ругался
     """
 
@@ -127,7 +128,7 @@ def normalize_photo_file_id(photo_file_id: Any) -> str | None:
     if not value:
         return None
 
-    if value.startswith("local:"):
+    if value.startswith(("local:", "cloudinary:")):
         return value
 
     if not value.startswith(("http://", "https://")):

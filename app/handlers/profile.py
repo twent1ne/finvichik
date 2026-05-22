@@ -16,6 +16,7 @@ from app.keyboards import (
     photo_keyboard,
     settings_keyboard,
 )
+from app.photo_storage import is_r2_photo_id, public_url_for_photo_id
 from app.storage import (
     delete_profile,
     get_blocked_profiles,
@@ -173,13 +174,13 @@ def format_profile(profile: dict[str, Any]) -> str:
 
 def get_local_photo_path(photo_file_id: str) -> Path | None:
     """
-    Если фото загружено через Mini App, оно может храниться локально.
+    Если фото загружено через Mini App старым способом, оно могло храниться локально.
 
     В базе оно выглядит так:
     local:profile_photos/123456789.jpg
 
     Эта функция превращает такую строку в путь к файлу.
-    Если файла уже нет на Render, возвращает None.
+    Если файла уже нет на хостинге, возвращает None.
     """
 
     if not photo_file_id.startswith("local:"):
@@ -262,6 +263,7 @@ def resolve_photo_for_telegram(photo_file_id: str) -> FSInputFile | str | None:
 
     Возможные варианты:
     - local:...          -> отправляем как FSInputFile, если файл существует;
+    - r2:...             -> отправляем как публичный URL из Cloudflare R2;
     - https://...        -> отправляем как URL, предварительно убирая порт;
     - Telegram file_id   -> отправляем напрямую;
     - битая ссылка/файл  -> возвращаем None.
@@ -271,6 +273,15 @@ def resolve_photo_for_telegram(photo_file_id: str) -> FSInputFile | str | None:
 
     if not photo_file_id:
         return None
+
+    if is_r2_photo_id(photo_file_id):
+        photo_url = public_url_for_photo_id(photo_file_id)
+
+        if not photo_url:
+            print(f"Некорректное R2 фото профиля: {photo_file_id}")
+            return None
+
+        return photo_url
 
     if photo_file_id.startswith("local:"):
         local_photo_path = get_local_photo_path(photo_file_id)
@@ -311,7 +322,7 @@ async def send_profile_message(
     """
     Отправляет анкету пользователю.
 
-    Если фото битое, пропало с Render или Telegram не принимает URL,
+    Если фото битое, пропало с хостинга или Telegram не принимает URL,
     обработчик не должен падать. В таком случае отправляем анкету текстом.
     """
 

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-
 from dotenv import load_dotenv
 
 
@@ -24,7 +23,7 @@ def get_required_env(name: str) -> str:
     if not value:
         raise RuntimeError(
             f"Не найдена переменная окружения {name}. "
-            "Проверь файл .env или переменные окружения Render."
+            "Проверь файл .env или переменные окружения хостинга."
         )
 
     return value
@@ -107,11 +106,12 @@ ALLOW_DEV_AUTH = os.getenv("ALLOW_DEV_AUTH", "false").lower() == "true"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 IS_RENDER = os.getenv("RENDER", "false").lower() == "true"
+IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT"))
 
 
 # Telegram ID админов, которым будут приходить жалобы.
 #
-# Пример для Render Environment:
+# Пример:
 # ADMIN_TELEGRAM_IDS=783877203
 #
 # Несколько админов:
@@ -119,6 +119,15 @@ IS_RENDER = os.getenv("RENDER", "false").lower() == "true"
 ADMIN_TELEGRAM_IDS = parse_int_list(
     os.getenv("ADMIN_TELEGRAM_IDS")
 )
+
+
+# Cloudinary.
+#
+# Эти переменные нужны для хранения фото профилей не на диске хостинга,
+# а во внешнем постоянном хранилище Cloudinary.
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "").strip()
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "").strip()
 
 
 # Настройки модерации жалоб.
@@ -145,18 +154,17 @@ def is_admin(user_id: int) -> bool:
     return int(user_id) in ADMIN_TELEGRAM_IDS
 
 
-if IS_RENDER and not DATABASE_URL:
+if (IS_RENDER or IS_RAILWAY) and not DATABASE_URL:
     raise RuntimeError(
-        "На Render не найдена переменная DATABASE_URL. "
-        "Из-за этого проект может случайно работать на SQLite вместо Neon/PostgreSQL. "
-        "Добавь DATABASE_URL в Render → Environment."
+        "На хостинге не найдена переменная DATABASE_URL. "
+        "Добавь DATABASE_URL в Environment Variables."
     )
 
 
-if IS_RENDER and "localhost" in MINI_APP_URL:
+if (IS_RENDER or IS_RAILWAY) and "localhost" in MINI_APP_URL:
     raise RuntimeError(
-        "На Render переменная MINI_APP_URL не должна быть localhost. "
-        "Укажи публичный адрес, например: https://finvichik.onrender.com"
+        "На хостинге переменная MINI_APP_URL не должна быть localhost. "
+        "Укажи публичный адрес приложения."
     )
 
 

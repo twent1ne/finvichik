@@ -16,6 +16,11 @@ from pydantic import BaseModel, Field
 from app.bot import bot
 from app.config import ALLOW_DEV_AUTH, ADMIN_TELEGRAM_IDS, BOT_TOKEN
 from app.database import init_db
+from app.photo_storage import (
+    is_r2_photo_id,
+    public_url_for_photo_id,
+    upload_profile_photo,
+)
 from app.storage import (
     block_user,
     create_match,
@@ -450,6 +455,9 @@ async def notify_admins_about_report(report_result: dict[str, Any]) -> None:
 def get_safe_local_photo_path(photo_file_id: str) -> Path | None:
     """
     Возвращает безопасный путь к локальному фото.
+
+    Оставляем для совместимости со старыми фото формата:
+    local:profile_photos/123456789.jpg
     """
 
     if not photo_file_id.startswith("local:"):
@@ -478,7 +486,7 @@ def is_telegram_file_id(photo_file_id: str) -> bool:
     Проверяет, похоже ли значение на Telegram file_id.
     """
 
-    if photo_file_id.startswith("local:"):
+    if photo_file_id.startswith(("local:", "r2:")):
         return False
 
     if photo_file_id.startswith(("http://", "https://")):
@@ -490,12 +498,27 @@ def is_telegram_file_id(photo_file_id: str) -> bool:
 def get_photo_url(profile: dict[str, Any]) -> str | None:
     """
     Возвращает URL фотографии профиля для Mini App.
+
+    Новые фото из Mini App хранятся в Cloudflare R2 и сразу возвращаются
+    как публичный URL. Старые local-фото и Telegram file_id продолжаем
+    отдавать через /api/photo/{telegram_id}.
     """
 
     photo_file_id = profile.get("photo_file_id")
 
     if not photo_file_id:
         return None
+
+    photo_file_id = str(photo_file_id).strip()
+
+    if not photo_file_id:
+        return None
+
+    if is_r2_photo_id(photo_file_id):
+        return public_url_for_photo_id(photo_file_id)
+
+    if photo_file_id.startswith(("http://", "https://")):
+        return photo_file_id
 
     telegram_id = profile.get("telegram_id")
 
@@ -573,6 +596,9 @@ def get_telegram_file_url(file_id: str) -> str:
 def delete_old_local_profile_photos(telegram_id: int, keep_file_name: str) -> None:
     """
     Удаляет старые локальные фото пользователя с другими расширениями.
+
+    Оставлено только для совместимости со старым local-flow.
+    Новые фото теперь загружаются в Cloudflare R2.
     """
 
     for extension in (".jpg", ".jpeg", ".png", ".webp"):
@@ -695,6 +721,9 @@ async def api_upload_my_photo(
 ):
     """
     Загружает или обновляет фото профиля из Mini App.
+
+    Новые фото сохраняются в Cloudflare R2, а не на локальный диск сервера.
+    Это решает проблему исчезающих фото на Render/Railway.
     """
 
     telegram_user = get_current_telegram_user(x_telegram_init_data)
@@ -714,25 +743,6 @@ async def api_upload_my_photo(
             detail="Only images are allowed",
         )
 
-    extension = ".jpg"
-
-    if photo.filename:
-        filename_lower = photo.filename.lower()
-
-        if filename_lower.endswith(".png"):
-            extension = ".png"
-        elif filename_lower.endswith(".webp"):
-            extension = ".webp"
-        elif filename_lower.endswith(".jpeg"):
-            extension = ".jpg"
-        elif filename_lower.endswith(".jpg"):
-            extension = ".jpg"
-
-    PROFILE_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-
-    file_name = f"{telegram_id}{extension}"
-    file_path = PROFILE_PHOTOS_DIR / file_name
-
     content = await photo.read()
 
     max_size_bytes = 5 * 1024 * 1024
@@ -749,13 +759,22 @@ async def api_upload_my_photo(
             detail="Photo is empty",
         )
 
-    file_path.write_bytes(content)
-    delete_old_local_profile_photos(telegram_id, keep_file_name=file_name)
-
-    local_photo_id = f"local:profile_photos/{file_name}"
+    try:
+        photo_file_id, photo_url = upload_profile_photo(
+            telegram_id=telegram_id,
+            content=content,
+            filename=photo.filename,
+            content_type=photo.content_type,
+        )
+    except RuntimeError as error:
+        print(error)
+        raise HTTPException(
+            status_code=500,
+            detail="Photo storage is unavailable",
+        )
 
     updated_profile = dict(profile)
-    updated_profile["photo_file_id"] = local_photo_id
+    updated_profile["photo_file_id"] = photo_file_id
     updated_profile["username"] = telegram_user.get("username")
 
     save_profile(
@@ -766,7 +785,7 @@ async def api_upload_my_photo(
     return {
         "ok": True,
         "message": "Photo uploaded",
-        "photo_url": f"/api/photo/{telegram_id}?v={int(time.time())}",
+        "photo_url": photo_url,
     }
 
 
@@ -774,6 +793,9 @@ async def api_upload_my_photo(
 async def api_get_profile_photo(telegram_id: int):
     """
     Возвращает фото профиля.
+
+    R2-фото редиректим на публичный URL.
+    Старые local-фото и Telegram file_id оставляем рабочими.
     """
 
     profile = get_profile(telegram_id)
@@ -799,6 +821,17 @@ async def api_get_profile_photo(telegram_id: int):
             status_code=404,
             detail="Photo not found",
         )
+
+    if is_r2_photo_id(photo_file_id):
+        photo_url = public_url_for_photo_id(photo_file_id)
+
+        if not photo_url:
+            raise HTTPException(
+                status_code=404,
+                detail="R2 photo not found",
+            )
+
+        return RedirectResponse(photo_url)
 
     local_photo_path = get_safe_local_photo_path(photo_file_id)
 
