@@ -1,68 +1,24 @@
-import asyncio
-import os
-
 import uvicorn
 
-from app.bot import bot, dp
-from app.database import init_db
 from web import app
 
 
-async def run_bot() -> None:
+def main() -> None:
     """
-    Запускает Telegram-бота в режиме polling.
-
-    Важно:
-    на Render Free polling может переставать отвечать после сна сервиса.
-    Для production лучше позже перейти на webhook.
+    Запускает FastAPI backend для Mini App и Telegram webhook на порту Waifly.
     """
 
-    print("Бот «Финвичик» запускается в режиме polling...")
+    port = 28015
 
-    try:
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+    print(f"Finvichik web backend запускается на порту {port}...")
 
-
-async def run_web() -> None:
-    """
-    Запускает FastAPI backend для Mini App.
-
-    Render передаёт порт через переменную окружения PORT.
-    """
-
-    port = int(os.getenv("PORT", "8000"))
-
-    config = uvicorn.Config(
-        app=app,
+    uvicorn.run(
+        app,
         host="0.0.0.0",
         port=port,
         log_level="info",
     )
 
-    server = uvicorn.Server(config)
-
-    print(f"Mini App backend запускается на порту {port}...")
-
-    await server.serve()
-
-
-async def main() -> None:
-    """
-    Одновременно запускает базу, Mini App backend и Telegram-бота.
-    """
-
-    init_db()
-
-    print("База данных PostgreSQL готова.")
-    print("Запускаем backend и Telegram-бота...")
-
-    await asyncio.gather(
-        run_web(),
-        run_bot(),
-    )
-
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

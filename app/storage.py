@@ -456,6 +456,72 @@ def get_profiles_for_viewer(
     return [dict(row) for row in rows]
 
 
+def get_new_likes_for_user(user_id: int) -> list[dict[str, Any]]:
+    """
+    Возвращает анкеты пользователей, которые поставили лайк текущему пользователю,
+    но текущий пользователь ещё никак им не ответил.
+
+    Не показываем:
+    - самого пользователя;
+    - анкеты, на которые текущий пользователь уже поставил like или skip;
+    - анкеты пользователей, которых текущий пользователь заблокировал;
+    - анкеты пользователей, которые заблокировали текущего пользователя;
+    - анкеты, временно или навсегда заблокированные модерацией.
+    """
+
+    release_expired_profile_blocks()
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                profiles.telegram_id,
+                profiles.username,
+                profiles.name,
+                profiles.gender,
+                profiles.age,
+                profiles.faculty,
+                profiles.course,
+                profiles.goal,
+                profiles.about,
+                profiles.interests,
+                profiles.photo_file_id,
+                profiles.moderation_status,
+                profiles.blocked_until,
+                profiles.permanent_blocked_at,
+                profiles.created_at,
+                profiles.updated_at
+            FROM likes AS incoming_likes
+            JOIN profiles
+                ON profiles.telegram_id = incoming_likes.from_user_id
+            WHERE incoming_likes.to_user_id = %s
+            AND incoming_likes.action = 'like'
+            AND profiles.telegram_id != %s
+            AND COALESCE(profiles.moderation_status, 'active') = 'active'
+            AND NOT EXISTS (
+                SELECT 1
+                FROM likes AS my_actions
+                WHERE my_actions.from_user_id = %s
+                AND my_actions.to_user_id = profiles.telegram_id
+            )
+            AND profiles.telegram_id NOT IN (
+                SELECT blocks.blocked_id
+                FROM blocks
+                WHERE blocks.blocker_id = %s
+            )
+            AND profiles.telegram_id NOT IN (
+                SELECT blocks.blocker_id
+                FROM blocks
+                WHERE blocks.blocked_id = %s
+            )
+            ORDER BY incoming_likes.created_at DESC
+            """,
+            (user_id, user_id, user_id, user_id, user_id),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
 def save_like_action(
     from_user_id: int,
     to_user_id: int,

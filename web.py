@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import html
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -13,8 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app.bot import bot
-from app.config import ALLOW_DEV_AUTH, ADMIN_TELEGRAM_IDS, BOT_TOKEN
+from aiogram.types import Update
+
+from app.bot import bot, dp
+from app.config import ALLOW_DEV_AUTH, ADMIN_TELEGRAM_IDS, BOT_TOKEN, MINI_APP_URL
 from app.database import init_db
 from app.photo_storage import (
     is_r2_photo_id,
@@ -55,6 +58,14 @@ PROFILE_PHOTOS_DIR.mkdir(exist_ok=True)
 ALLOWED_GENDERS = ["Парень", "Девушка"]
 ALLOWED_GOALS = ["Проект", "Дружба", "Отношения", "Нетворкинг"]
 ALLOWED_COURSES = ["1", "2", "3", "4", "5", "6"]
+
+
+ENABLE_TELEGRAM_WEBHOOK = os.getenv("ENABLE_TELEGRAM_WEBHOOK", "false").lower() == "true"
+
+WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+
+if not WEBHOOK_SECRET:
+    WEBHOOK_SECRET = hashlib.sha256(BOT_TOKEN.encode("utf-8")).hexdigest()[:32]
 
 
 app = FastAPI(
@@ -615,12 +626,76 @@ def delete_old_local_profile_photos(telegram_id: int, keep_file_name: str) -> No
 
 
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     """
     При запуске backend создаём таблицы базы данных.
+
+    Если включён режим webhook, регистрируем Telegram webhook.
+    Это нужно для PythonAnywhere, чтобы бот не работал через polling.
     """
 
     init_db()
+
+    if not ENABLE_TELEGRAM_WEBHOOK:
+        print("Telegram webhook выключен. Backend работает только как Mini App API.")
+        return
+
+    if "localhost" in MINI_APP_URL or "127.0.0.1" in MINI_APP_URL:
+        print(
+            "Telegram webhook не установлен: MINI_APP_URL указывает на localhost. "
+            "Для webhook нужен публичный HTTPS URL."
+        )
+        return
+
+    webhook_url = f"{MINI_APP_URL}/telegram/webhook/{WEBHOOK_SECRET}"
+
+    await bot.set_webhook(
+        url=webhook_url,
+        allowed_updates=dp.resolve_used_update_types(),
+        drop_pending_updates=False,
+    )
+
+    print(f"Telegram webhook установлен: {webhook_url}")
+
+
+@app.post("/telegram/webhook/{secret}")
+async def telegram_webhook(secret: str, request: Request):
+    """
+    Принимает обновления Telegram через webhook.
+
+    Этот роут нужен для PythonAnywhere, чтобы бот не запускался через polling
+    и не зависел от постоянного фонового процесса.
+    """
+
+    if not hmac.compare_digest(secret, WEBHOOK_SECRET):
+        raise HTTPException(
+            status_code=404,
+            detail="Not found",
+        )
+
+    try:
+        update_data = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON",
+        )
+
+    update = Update.model_validate(
+        update_data,
+        context={
+            "bot": bot,
+        },
+    )
+
+    await dp.feed_update(
+        bot=bot,
+        update=update,
+    )
+
+    return {
+        "ok": True,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

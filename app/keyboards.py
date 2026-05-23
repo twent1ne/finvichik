@@ -22,10 +22,13 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         ],
         [
             KeyboardButton(text="🔎 Смотреть анкеты"),
-            KeyboardButton(text="💌 Мои мэтчи"),
+            KeyboardButton(text="💘 Новые лайки"),
         ],
         [
+            KeyboardButton(text="💌 Мои мэтчи"),
             KeyboardButton(text="⚙️ Настройки"),
+        ],
+        [
             KeyboardButton(text="ℹ️ О проекте"),
         ],
     ]

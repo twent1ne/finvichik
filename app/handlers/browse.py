@@ -10,10 +10,13 @@ from app.keyboards import (
     view_goal_filter_keyboard,
 )
 from app.storage import (
+    block_user,
     create_match,
+    get_new_likes_for_user,
     get_profile,
     get_profiles_for_viewer,
     is_mutual_like,
+    report_user,
     save_like_action,
 )
 
@@ -25,7 +28,7 @@ class BrowseProfiles(StatesGroup):
     """
     Состояния просмотра анкет.
 
-    choosing_filter — пользователь выбирает фильтр.
+    choosing_filter — пользователь выбирает фильтр обычного просмотра.
     viewing — пользователь смотрит конкретную анкету.
     """
 
@@ -115,6 +118,24 @@ async def notify_about_match(
     )
 
 
+def get_empty_profiles_message(mode: str | None) -> str:
+    """
+    Возвращает текст, если в текущем режиме больше нет анкет.
+    """
+
+    if mode == "new_likes":
+        return (
+            "Новых лайков пока нет 😔\n\n"
+            "Когда кто-то поставит тебе лайк, но ты ещё не ответишь этому пользователю, "
+            "его анкета появится здесь."
+        )
+
+    return (
+        "Анкеты закончились 😔\n\n"
+        "Попробуй позже или выбери другой фильтр."
+    )
+
+
 async def send_next_profile(message: Message, state: FSMContext) -> None:
     """
     Отправляет следующую анкету из списка.
@@ -126,12 +147,12 @@ async def send_next_profile(message: Message, state: FSMContext) -> None:
 
     profiles = data.get("profiles", [])
     current_index = data.get("current_index", 0)
+    mode = data.get("mode")
 
     if current_index >= len(profiles):
         await state.clear()
         await message.answer(
-            "Анкеты закончились 😔\n\n"
-            "Попробуй позже или выбери другой фильтр.",
+            get_empty_profiles_message(mode),
             reply_markup=main_menu_keyboard(),
         )
         return
@@ -140,8 +161,11 @@ async def send_next_profile(message: Message, state: FSMContext) -> None:
 
     await state.update_data(current_profile_id=profile["telegram_id"])
 
+    prefix = "💘 <b>Новый лайк</b>\n\n" if mode == "new_likes" else ""
+
     text = (
-        format_profile_for_browsing(profile)
+        prefix
+        + format_profile_for_browsing(profile)
         + "\n\n"
         "Выбери действие:"
     )
@@ -166,7 +190,7 @@ async def send_next_profile(message: Message, state: FSMContext) -> None:
 @router.message(F.text == "🔎 Смотреть анкеты")
 async def browse_profiles_start(message: Message, state: FSMContext) -> None:
     """
-    Начинает просмотр анкет.
+    Начинает обычный просмотр анкет.
     """
 
     viewer_profile = get_profile(message.from_user.id)
@@ -190,10 +214,49 @@ async def browse_profiles_start(message: Message, state: FSMContext) -> None:
     await state.set_state(BrowseProfiles.choosing_filter)
 
 
+@router.message(F.text == "💘 Новые лайки")
+async def new_likes_start(message: Message, state: FSMContext) -> None:
+    """
+    Показывает анкеты пользователей, которые лайкнули текущего пользователя,
+    но текущий пользователь ещё не ответил им лайком, пропуском или блокировкой.
+    """
+
+    viewer_profile = get_profile(message.from_user.id)
+
+    if not viewer_profile:
+        await message.answer(
+            "Сначала нужно создать свою анкету.\n\n"
+            "После этого ты сможешь видеть новые лайки.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    profiles = get_new_likes_for_user(message.from_user.id)
+
+    if not profiles:
+        await state.clear()
+        await message.answer(
+            "Новых лайков пока нет 😔\n\n"
+            "Когда кто-то поставит тебе лайк, но ты ещё не ответишь этому пользователю, "
+            "его анкета появится здесь.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    await state.clear()
+    await state.update_data(
+        profiles=profiles,
+        current_index=0,
+        mode="new_likes",
+    )
+
+    await send_next_profile(message, state)
+
+
 @router.message(BrowseProfiles.choosing_filter)
 async def process_goal_filter(message: Message, state: FSMContext) -> None:
     """
-    Обрабатывает выбор фильтра.
+    Обрабатывает выбор фильтра обычного просмотра.
     """
 
     if not message.text:
@@ -251,6 +314,7 @@ async def process_goal_filter(message: Message, state: FSMContext) -> None:
         profiles=profiles,
         current_index=0,
         goal_filter=goal_filter,
+        mode="browse",
     )
 
     await send_next_profile(message, state)
@@ -330,6 +394,67 @@ async def skip_current_profile(message: Message, state: FSMContext) -> None:
     await send_next_profile(message, state)
 
 
+@router.message(BrowseProfiles.viewing, F.text == "⚠️ Пожаловаться")
+async def report_current_profile(message: Message, state: FSMContext) -> None:
+    """
+    Отправляет жалобу на текущую анкету и больше не показывает её пользователю.
+    """
+
+    data = await state.get_data()
+    current_profile_id = data.get("current_profile_id")
+    current_index = data.get("current_index", 0)
+
+    if not current_profile_id:
+        await state.clear()
+        await message.answer(
+            "Не удалось определить текущую анкету. Попробуй начать просмотр заново.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    report_user(
+        reporter_id=message.from_user.id,
+        reported_id=current_profile_id,
+        reason="Жалоба из Telegram-бота во время просмотра анкеты.",
+    )
+
+    await message.answer("⚠️ Жалоба отправлена. Эта анкета больше не будет тебе показываться.")
+
+    await state.update_data(current_index=current_index + 1)
+
+    await send_next_profile(message, state)
+
+
+@router.message(BrowseProfiles.viewing, F.text == "🚫 Заблокировать")
+async def block_current_profile(message: Message, state: FSMContext) -> None:
+    """
+    Блокирует текущую анкету для пользователя и показывает следующую.
+    """
+
+    data = await state.get_data()
+    current_profile_id = data.get("current_profile_id")
+    current_index = data.get("current_index", 0)
+
+    if not current_profile_id:
+        await state.clear()
+        await message.answer(
+            "Не удалось определить текущую анкету. Попробуй начать просмотр заново.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    block_user(
+        blocker_id=message.from_user.id,
+        blocked_id=current_profile_id,
+    )
+
+    await message.answer("🚫 Пользователь заблокирован. Эта анкета больше не будет тебе показываться.")
+
+    await state.update_data(current_index=current_index + 1)
+
+    await send_next_profile(message, state)
+
+
 @router.message(BrowseProfiles.viewing, F.text == "🛑 Остановить просмотр")
 async def stop_browsing(message: Message, state: FSMContext) -> None:
     """
@@ -354,6 +479,8 @@ async def wrong_browse_action(message: Message) -> None:
         "Пожалуйста, выбери действие кнопкой:\n"
         "❤️ Лайк\n"
         "➡️ Пропустить\n"
+        "⚠️ Пожаловаться\n"
+        "🚫 Заблокировать\n"
         "🛑 Остановить просмотр",
         reply_markup=profile_view_keyboard(),
     )
