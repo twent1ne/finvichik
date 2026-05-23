@@ -8,7 +8,7 @@
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-    <link rel="stylesheet" href="/static/styles.css?v=6">
+    <link rel="stylesheet" href="/static/styles.css?v=7">
 </head>
 <body>
     <div class="app">
@@ -17,7 +17,7 @@
             <p id="telegramUsername"></p>
         </section>
 
-        <nav class="tabs tabs-four">
+        <nav class="tabs tabs-five">
             <button class="tab-button active" data-tab="profile">
                 <span>👤</span>
                 Анкета
@@ -25,6 +25,10 @@
             <button class="tab-button" data-tab="browse">
                 <span>🔎</span>
                 Анкеты
+            </button>
+            <button class="tab-button" data-tab="likes">
+                <span>💘</span>
+                Лайки
             </button>
             <button class="tab-button" data-tab="matches">
                 <span>💌</span>
@@ -294,6 +298,95 @@
             </section>
         </section>
 
+
+        <section id="likesTab" class="tab-content">
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <p class="label">Входящие симпатии</p>
+                        <h2>Новые лайки</h2>
+                    </div>
+                    <div class="soft-icon">💘</div>
+                </div>
+
+                <p class="muted">
+                    Здесь показываются анкеты тех, кто уже поставил тебе лайк, а ты ещё не ответил.
+                    Если нажмёшь «❤️ Лайк», появится взаимный мэтч.
+                </p>
+
+                <button id="loadNewLikesButton" class="primary-button browse-load-button">
+                    Показать новый лайк
+                </button>
+
+                <div id="newLikesCard" class="browse-card hidden">
+                    <div class="profile-card-top">
+                        <p class="label">Тебя лайкнули</p>
+                        <span class="profile-counter">Новый лайк</span>
+                    </div>
+
+                    <div id="newLikesAvatar" class="student-avatar">
+                        <span id="newLikesAvatarLetter">Ф</span>
+                    </div>
+
+                    <h2 id="newLikesName"></h2>
+                    <p id="newLikesMeta" class="muted"></p>
+
+                    <div class="profile-block">
+                        <h3>О себе</h3>
+                        <p id="newLikesAbout"></p>
+                    </div>
+
+                    <div class="profile-block">
+                        <h3>Интересы</h3>
+                        <p id="newLikesInterests"></p>
+                    </div>
+
+                    <div id="newLikesReportForm" class="report-form hidden">
+                        <h3>⚠️ Жалоба на анкету</h3>
+                        <p class="muted">
+                            Опиши, что не так с анкетой. Жалоба уйдёт модераторам, а эта анкета будет скрыта для тебя.
+                        </p>
+
+                        <label>
+                            <span>Причина</span>
+                            <select id="newLikesReportReason" name="newLikesReportReason">
+                                <option value="">Выбери причину</option>
+                                <option value="Спам или реклама">Спам или реклама</option>
+                                <option value="Оскорбления или агрессия">Оскорбления или агрессия</option>
+                                <option value="Неприемлемое фото">Неприемлемое фото</option>
+                                <option value="Фейковая анкета">Фейковая анкета</option>
+                                <option value="Чужие данные или фото">Чужие данные или фото</option>
+                                <option value="Другое">Другое</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Комментарий</span>
+                            <textarea id="newLikesReportComment" name="newLikesReportComment" rows="3" placeholder="Например: пользователь указал чужое фото или пишет оскорбления"></textarea>
+                        </label>
+
+                        <div class="report-actions">
+                            <button id="submitNewLikesReportButton" type="button" class="action-button report">
+                                Отправить жалобу
+                            </button>
+                            <button id="cancelNewLikesReportButton" type="button" class="action-button skip">
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="action-grid action-grid-no-back">
+                        <button id="newLikesLikeButton" class="action-button like">❤️ Лайк</button>
+                        <button id="newLikesSkipButton" class="action-button skip">➡️ Пропустить</button>
+                        <button id="newLikesReportButton" class="action-button report">⚠️ Жалоба</button>
+                        <button id="newLikesBlockButton" class="action-button block">🚫 Блок</button>
+                    </div>
+                </div>
+
+                <p id="newLikesStatus" class="status"></p>
+            </section>
+        </section>
+
         <section id="matchesTab" class="tab-content">
             <section class="card">
                 <div class="section-heading">
@@ -385,6 +478,6 @@
         </section>
     </div>
 
-    <script src="/static/app.js?v=21"></script>
+    <script src="/static/app.js?v=22"></script>
 </body>
 </html>

@@ -168,6 +168,10 @@ textarea {
     grid-template-columns: repeat(4, 1fr);
 }
 
+.tabs-five {
+    grid-template-columns: repeat(5, 1fr);
+}
+
 .tab-button {
     border: none;
     background: transparent;
@@ -755,8 +759,8 @@ textarea {
     }
 
     .tab-button {
-        font-size: 11px;
-        padding: 9px 4px;
+        font-size: 10px;
+        padding: 9px 3px;
     }
 
     .form-grid,
@@ -784,4 +788,8 @@ textarea {
     .filter-section {
         padding: 12px;
     }
+}
+
+.action-grid-no-back {
+    grid-template-columns: 1fr 1fr;
 }

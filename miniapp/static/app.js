@@ -32,6 +32,7 @@ const tabButtons = document.querySelectorAll(".tab-button");
 
 const profileTab = document.getElementById("profileTab");
 const browseTab = document.getElementById("browseTab");
+const likesTab = document.getElementById("likesTab");
 const matchesTab = document.getElementById("matchesTab");
 const statsTab = document.getElementById("statsTab");
 
@@ -52,6 +53,28 @@ const browseName = document.getElementById("browseName");
 const browseMeta = document.getElementById("browseMeta");
 const browseAbout = document.getElementById("browseAbout");
 const browseInterests = document.getElementById("browseInterests");
+
+const loadNewLikesButton = document.getElementById("loadNewLikesButton");
+const newLikesCard = document.getElementById("newLikesCard");
+const newLikesStatus = document.getElementById("newLikesStatus");
+
+const newLikesAvatar = document.getElementById("newLikesAvatar");
+const newLikesAvatarLetter = document.getElementById("newLikesAvatarLetter");
+const newLikesName = document.getElementById("newLikesName");
+const newLikesMeta = document.getElementById("newLikesMeta");
+const newLikesAbout = document.getElementById("newLikesAbout");
+const newLikesInterests = document.getElementById("newLikesInterests");
+
+const newLikesReportForm = document.getElementById("newLikesReportForm");
+const newLikesReportReasonSelect = document.getElementById("newLikesReportReason");
+const newLikesReportCommentInput = document.getElementById("newLikesReportComment");
+const submitNewLikesReportButton = document.getElementById("submitNewLikesReportButton");
+const cancelNewLikesReportButton = document.getElementById("cancelNewLikesReportButton");
+
+const newLikesLikeButton = document.getElementById("newLikesLikeButton");
+const newLikesSkipButton = document.getElementById("newLikesSkipButton");
+const newLikesReportButton = document.getElementById("newLikesReportButton");
+const newLikesBlockButton = document.getElementById("newLikesBlockButton");
 
 const reportForm = document.getElementById("reportForm");
 const reportReasonSelect = document.getElementById("reportReason");
@@ -85,6 +108,7 @@ const permanentlyBlockedProfilesCount = document.getElementById("permanentlyBloc
 const newReportsCount = document.getElementById("newReportsCount");
 
 let currentBrowseProfile = null;
+let currentNewLikeProfile = null;
 let selectedBrowseGoal = "";
 
 const authErrorText = "Ошибка авторизации Telegram. Открой Mini App через кнопку меню в боте.";
@@ -106,6 +130,20 @@ function setBrowseStatus(message, type = "") {
 
     if (type) {
         browseStatus.classList.add(type);
+    }
+}
+
+
+function setNewLikesStatus(message, type = "") {
+    if (!newLikesStatus) {
+        return;
+    }
+
+    newLikesStatus.textContent = message;
+    newLikesStatus.className = "status";
+
+    if (type) {
+        newLikesStatus.classList.add(type);
     }
 }
 
@@ -598,6 +636,259 @@ async function uploadProfilePhoto() {
 }
 
 
+
+
+function closeNewLikesReportForm() {
+    if (!newLikesReportForm) {
+        return;
+    }
+
+    newLikesReportForm.classList.add("hidden");
+
+    if (newLikesReportReasonSelect) {
+        newLikesReportReasonSelect.value = "";
+    }
+
+    if (newLikesReportCommentInput) {
+        newLikesReportCommentInput.value = "";
+    }
+}
+
+
+function openNewLikesReportForm() {
+    if (!currentNewLikeProfile) {
+        setNewLikesStatus("Сначала загрузи новый лайк.", "error");
+        return;
+    }
+
+    if (!newLikesReportForm) {
+        setNewLikesStatus("Форма жалобы не найдена. Обнови Mini App.", "error");
+        return;
+    }
+
+    if (newLikesReportReasonSelect) {
+        newLikesReportReasonSelect.value = "";
+    }
+
+    if (newLikesReportCommentInput) {
+        newLikesReportCommentInput.value = "";
+    }
+
+    newLikesReportForm.classList.remove("hidden");
+    setNewLikesStatus("Опиши причину жалобы и отправь её модераторам.");
+}
+
+
+function buildNewLikesReportReason() {
+    const selectedReason = newLikesReportReasonSelect?.value?.trim() || "";
+    const comment = newLikesReportCommentInput?.value?.trim() || "";
+
+    if (!selectedReason && !comment) {
+        return "";
+    }
+
+    if (selectedReason && comment) {
+        return `${selectedReason}: ${comment}`;
+    }
+
+    return selectedReason || comment;
+}
+
+
+async function submitNewLikesReport() {
+    if (!currentNewLikeProfile) {
+        setNewLikesStatus("Сначала загрузи новый лайк.", "error");
+        return;
+    }
+
+    const reason = buildNewLikesReportReason();
+
+    if (!reason) {
+        setNewLikesStatus("Выбери причину жалобы или напиши комментарий.", "error");
+        return;
+    }
+
+    await sendNewLikeAction("report", reason);
+}
+
+
+function renderNewLikeProfile(profile) {
+    currentNewLikeProfile = profile;
+
+    closeNewLikesReportForm();
+
+    if (!newLikesCard) {
+        return;
+    }
+
+    if (!profile) {
+        newLikesCard.classList.add("hidden");
+        return;
+    }
+
+    newLikesName.textContent = profile.name;
+
+    const genderText = profile.gender || "пол не указан";
+    const ageText = profile.age ? `${profile.age} лет` : "возраст не указан";
+
+    newLikesMeta.textContent =
+        `${genderText} · ${ageText} · ${profile.faculty} · ${profile.course} курс · ${profile.goal}`;
+
+    newLikesAbout.textContent = profile.about;
+    newLikesInterests.textContent = profile.interests;
+
+    renderPhoto(
+        newLikesAvatar,
+        newLikesAvatarLetter,
+        profile.photo_url,
+        getFirstLetter(profile.name)
+    );
+
+    newLikesCard.classList.remove("hidden");
+}
+
+
+async function loadNextNewLikeProfile() {
+    setNewLikesStatus("Загрузка новых лайков...");
+
+    if (newLikesCard) {
+        newLikesCard.classList.add("hidden");
+    }
+
+    currentNewLikeProfile = null;
+    closeNewLikesReportForm();
+
+    try {
+        const response = await fetch("/api/likes/incoming", {
+            method: "GET",
+            headers: getTelegramAuthOnlyHeaders()
+        });
+
+        if (response.status === 400) {
+            setNewLikesStatus("Сначала создай свою анкету во вкладке «Анкета».", "error");
+            return;
+        }
+
+        if (response.status === 401) {
+            setNewLikesStatus(authErrorText, "error");
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error("Не удалось загрузить новые лайки");
+        }
+
+        const data = await response.json();
+        const likes = data.likes || [];
+
+        if (!likes.length) {
+            renderNewLikeProfile(null);
+            setNewLikesStatus("Новых лайков пока нет. Когда кто-то лайкнет твою анкету, он появится здесь.");
+            return;
+        }
+
+        renderNewLikeProfile(likes[0]);
+        setNewLikesStatus(`Найдено новых лайков: ${likes.length}.`, "success");
+    } catch (error) {
+        setNewLikesStatus("Ошибка загрузки новых лайков.", "error");
+        console.error(error);
+
+        if (tg) {
+            tg.HapticFeedback?.notificationOccurred("error");
+        }
+    }
+}
+
+
+async function sendNewLikeAction(action, reason = null) {
+    if (!currentNewLikeProfile) {
+        setNewLikesStatus("Сначала загрузи новый лайк.", "error");
+        return;
+    }
+
+    const payload = {
+        target_user_id: currentNewLikeProfile.telegram_id,
+        action: action
+    };
+
+    if (action === "report") {
+        payload.reason = reason;
+    }
+
+    try {
+        const response = await fetch("/api/browse/action", {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+
+        if (response.status === 401) {
+            setNewLikesStatus(authErrorText, "error");
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error("Не удалось выполнить действие");
+        }
+
+        const data = await response.json();
+
+        if (action === "like") {
+            if (data.match) {
+                setNewLikesStatus(
+                    "🎉 Мэтч! Контакт теперь доступен во вкладке «Мэтчи».",
+                    "success"
+                );
+
+                loadMatches();
+
+                if (tg) {
+                    tg.HapticFeedback?.notificationOccurred("success");
+                }
+            } else {
+                setNewLikesStatus("❤️ Лайк сохранён.", "success");
+            }
+        }
+
+        if (action === "skip") {
+            setNewLikesStatus("➡️ Анкета пропущена.", "success");
+        }
+
+        if (action === "report") {
+            closeNewLikesReportForm();
+
+            if (data.permanent_block_applied) {
+                setNewLikesStatus(
+                    "⚠️ Жалоба отправлена. Анкета заблокирована навсегда из-за повторных нарушений.",
+                    "success"
+                );
+            } else if (data.temporary_block_applied) {
+                setNewLikesStatus(
+                    "⚠️ Жалоба отправлена. Анкета временно скрыта модерацией.",
+                    "success"
+                );
+            } else {
+                setNewLikesStatus("⚠️ Жалоба отправлена модераторам. Анкета скрыта.", "success");
+            }
+        }
+
+        if (action === "block") {
+            setNewLikesStatus("🚫 Пользователь заблокирован.", "success");
+            loadMatches();
+        }
+
+        await loadNextNewLikeProfile();
+    } catch (error) {
+        setNewLikesStatus("Ошибка действия.", "error");
+        console.error(error);
+
+        if (tg) {
+            tg.HapticFeedback?.notificationOccurred("error");
+        }
+    }
+}
+
+
 function switchTab(tabName) {
     tabButtons.forEach((button) => {
         button.classList.toggle("active", button.dataset.tab === tabName);
@@ -605,8 +896,13 @@ function switchTab(tabName) {
 
     profileTab.classList.toggle("active", tabName === "profile");
     browseTab.classList.toggle("active", tabName === "browse");
+    likesTab?.classList.toggle("active", tabName === "likes");
     matchesTab.classList.toggle("active", tabName === "matches");
     statsTab.classList.toggle("active", tabName === "stats");
+
+    if (tabName === "likes") {
+        loadNextNewLikeProfile();
+    }
 
     if (tabName === "matches") {
         loadMatches();
@@ -1059,6 +1355,18 @@ if (submitReportButton) {
     submitReportButton.addEventListener("click", submitReport);
 }
 
+if (loadNewLikesButton) {
+    loadNewLikesButton.addEventListener("click", loadNextNewLikeProfile);
+}
+
+if (cancelNewLikesReportButton) {
+    cancelNewLikesReportButton.addEventListener("click", closeNewLikesReportForm);
+}
+
+if (submitNewLikesReportButton) {
+    submitNewLikesReportButton.addEventListener("click", submitNewLikesReport);
+}
+
 profileForm.addEventListener("submit", saveProfile);
 profilePhotoInput.addEventListener("change", uploadProfilePhoto);
 
@@ -1069,6 +1377,22 @@ likeButton.addEventListener("click", () => sendBrowseAction("like"));
 skipButton.addEventListener("click", () => sendBrowseAction("skip"));
 reportButton.addEventListener("click", openReportForm);
 blockButton.addEventListener("click", () => sendBrowseAction("block"));
+
+if (newLikesLikeButton) {
+    newLikesLikeButton.addEventListener("click", () => sendNewLikeAction("like"));
+}
+
+if (newLikesSkipButton) {
+    newLikesSkipButton.addEventListener("click", () => sendNewLikeAction("skip"));
+}
+
+if (newLikesReportButton) {
+    newLikesReportButton.addEventListener("click", openNewLikesReportForm);
+}
+
+if (newLikesBlockButton) {
+    newLikesBlockButton.addEventListener("click", () => sendNewLikeAction("block"));
+}
 
 loadMatchesButton.addEventListener("click", loadMatches);
 loadStatsButton.addEventListener("click", loadStats);

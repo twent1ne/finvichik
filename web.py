@@ -27,6 +27,7 @@ from app.photo_storage import (
 from app.storage import (
     block_user,
     create_match,
+    get_new_likes_for_user,
     get_profile,
     get_profiles_for_viewer,
     get_project_stats,
@@ -1177,6 +1178,36 @@ async def api_unlike_profile(
     return {
         "ok": True,
         "message": "Лайк убран",
+    }
+
+
+
+@app.get("/api/likes/incoming")
+async def api_get_incoming_likes(
+    x_telegram_init_data: str | None = Header(default=None),
+):
+    """
+    Возвращает анкеты пользователей, которые поставили лайк текущему пользователю,
+    а текущий пользователь ещё не ответил им лайком, пропуском или блокировкой.
+
+    Username скрываем до взаимного мэтча.
+    """
+
+    telegram_user = get_current_telegram_user(x_telegram_init_data)
+    current_user_id = int(telegram_user["id"])
+
+    user_profile = get_profile(current_user_id)
+
+    if not user_profile:
+        raise HTTPException(
+            status_code=400,
+            detail="Create your profile first",
+        )
+
+    profiles = get_new_likes_for_user(current_user_id)
+
+    return {
+        "likes": [profile_for_public_view(profile) for profile in profiles],
     }
 
 
