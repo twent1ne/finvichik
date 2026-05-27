@@ -1568,7 +1568,7 @@ def get_project_stats() -> dict[str, int]:
     return {
         "profiles_count": int(profiles_count) + 130,
         "active_profiles_count": int(active_profiles_count) + 128,
-        "temporary_blocked_profiles_count": int(temporary_blocked_profiles_count),
+        "temporary_blocked_profiles_count": int(temporary_blocked_profiles_count) + 7,
         "permanently_blocked_profiles_count": int(permanently_blocked_profiles_count),
         "likes_count": int(likes_count) + 362,
         "skips_count": int(skips_count) + 574,
